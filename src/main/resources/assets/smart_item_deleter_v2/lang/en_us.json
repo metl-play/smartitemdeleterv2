@@ -1,0 +1,13 @@
+{
+  "itemGroup.smartitemdeleterv2": "Example Mod Tab",
+  "block.smartitemdeleterv2.example_block": "Example Block",
+  "item.smartitemdeleterv2.example_item": "Example Item",
+
+  "smartitemdeleterv2.configuration.title": "smart-item-deleter-V2 Configs",
+  "smartitemdeleterv2.configuration.section.smartitemdeleterv2.common.toml": "smart-item-deleter-V2 Configs",
+  "smartitemdeleterv2.configuration.section.smartitemdeleterv2.common.toml.title": "smart-item-deleter-V2 Configs",
+  "smartitemdeleterv2.configuration.items": "Item List",
+  "smartitemdeleterv2.configuration.logDirtBlock": "Log Dirt Block",
+  "smartitemdeleterv2.configuration.magicNumberIntroduction": "Magic Number Text",
+  "smartitemdeleterv2.configuration.magicNumber": "Magic Number"
+}
