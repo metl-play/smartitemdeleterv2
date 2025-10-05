@@ -102,13 +102,13 @@ public final class ItemCleanupSystem {
                     return (nowMs - firstSeen) >= CleanupConfig.minItemAgeMs;
                 })
                 .filter(PolicyEngine.filterPredicate(level))
+                .sorted(Comparator.comparingLong((ItemEntity ie) -> {
+                    TrackedItem ti = data.map().get(ie.getUUID());
+                    return (ti != null ? ti.firstSeenMs() : nowMs);
+                }))
                 .collect(Collectors.toCollection(ArrayList::new));
 
         // Sort oldest first (ascending by firstSeenMs) so that the newest items remain safe
-        eligible.sort(Comparator.comparingLong((ItemEntity ie) -> {
-            TrackedItem ti = data.map().get(ie.getUUID());
-            return (ti != null ? ti.firstSeenMs() : nowMs);
-        }));
 
         // Determine deletion counts:
         //  - "excess": how far we are over the threshold
