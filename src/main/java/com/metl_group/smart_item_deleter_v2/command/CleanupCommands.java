@@ -4,6 +4,7 @@ import com.metl_group.smart_item_deleter_v2.core.ItemCleanupSystem;
 import com.mojang.brigadier.CommandDispatcher;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 
 public final class CleanupCommands {
     private CleanupCommands(){}
@@ -13,13 +14,13 @@ public final class CleanupCommands {
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("now")
                         .executes(ctx -> {
-                            // Sofortausführung pro Level:
                             var srv = ctx.getSource().getServer();
                             long now = srv.getTickCount() * 50L;
                             for (var level : srv.getAllLevels()) {
+                                // Optional: forced variant
                                 ItemCleanupSystem.runCycle(level, now);
                             }
-                            ctx.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.literal("Cleanup ausgeführt."), true);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Forced cleanup executed."), true);
                             return 1;
                         })
                 )
