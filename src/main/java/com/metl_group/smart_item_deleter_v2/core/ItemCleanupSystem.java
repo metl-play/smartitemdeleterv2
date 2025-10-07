@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
 public final class ItemCleanupSystem {
     // Next scheduled server tick to run the cleanup; replaces fixed modulo logic.
     private static long nextRunTick = 0L;
+    private static long lastJoinTick = 0L;
+
 
     private ItemCleanupSystem(){}
 
@@ -37,6 +39,12 @@ public final class ItemCleanupSystem {
 
         // Not yet time to run
         if (nowTick < nextRunTick) return;
+
+        if (server.getTickCount() - lastJoinTick < 100) { // ~5s
+            // skip this cycle
+            nextRunTick = nowTick + computeDelayTicks();
+            return;
+        }
 
         // Run once for all levels
         final long nowMs = nowTick * 50L; // ms approx.
@@ -71,7 +79,7 @@ public final class ItemCleanupSystem {
      *  - Delete up to min(excess, percentage-of-eligible).
      */
     public static void runCycle(ServerLevel level, long nowMs) {
-        List<ItemEntity> items = allItems(level);
+        /*List<ItemEntity> items = allItems(level);
 
         // Only proceed if we exceed the threshold. This also prevents "aging" while under threshold.
         int total = items.size();
@@ -79,6 +87,22 @@ public final class ItemCleanupSystem {
         if (total <= threshold) {
             return;
         }
+         */
+
+        if (!level.getServer().isSameThread()) {
+            level.getServer().execute(() -> runCycle(level, nowMs)); // reschedule on main thread
+            return;
+        }
+
+        //int total = level.getEntitiesOfClass(ItemEntity.class, level.getWorldBorder().getCollisionShape().bounds().inflate(1024)).size();
+        int total = allItems(level).size();
+        int threshold = CleanupConfig.entityCountThreshold;
+        if (total <= threshold) {
+            return;
+        }
+
+        // only now: build the full list (we already bail early above)
+        List<ItemEntity> items = allItems(level);
 
         // Persistent tracking state
         TrackedItemsData data = TrackedItemsData.get(level);
@@ -159,5 +183,11 @@ public final class ItemCleanupSystem {
                     )
             );
         }
+    }
+
+    @SubscribeEvent
+    public static void onLogin(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e) {
+        if (e.getEntity().level().isClientSide()) return;
+        lastJoinTick = Objects.requireNonNull(e.getEntity().level().getServer()).getTickCount();
     }
 }
