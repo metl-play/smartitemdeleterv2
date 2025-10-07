@@ -1,5 +1,6 @@
 package com.metl_group.smart_item_deleter_v2;
 
+import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -11,10 +12,12 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 import com.metl_group.smart_item_deleter_v2.command.CleanupCommands;
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
+import org.slf4j.Logger;
 
 @Mod(ModMain.MOD_ID)
 public final class ModMain {
     public static final String MOD_ID = "smart_item_deleter_v2";
+    public static final Logger LOGGER = LogUtils.getLogger();
 
     // WICHTIG: ModContainer im Konstruktor annehmen und dort Config registrieren
     public ModMain(ModContainer container) {

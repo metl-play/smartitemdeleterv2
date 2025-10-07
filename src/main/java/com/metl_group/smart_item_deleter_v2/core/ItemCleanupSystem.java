@@ -5,68 +5,68 @@ import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 import com.metl_group.smart_item_deleter_v2.persist.TrackedItem;
 import com.metl_group.smart_item_deleter_v2.persist.TrackedItemsData;
 
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.phys.AABB;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-@EventBusSubscriber(modid = ModMain.MOD_ID)
+/**
+ * Server-side periodic item cleanup.
+ * Hardening for async/hybrid servers:
+ * - Skip when no players online
+ * - Per-level: skip when no players in that level
+ * - Scan only around players (view distance radius), not the whole world
+ * - Do not broadcast messages when no players are online
+ * - Ensure main-thread execution
+ */
+@EventBusSubscriber(modid = ModMain.MOD_ID, value = Dist.DEDICATED_SERVER)
 public final class ItemCleanupSystem {
-    // Next scheduled server tick to run the cleanup; replaces fixed modulo logic.
     private static long nextRunTick = 0L;
-    private static long lastJoinTick = 0L;
-
 
     private ItemCleanupSystem(){}
 
     @SubscribeEvent
     public static void onServerTick(final ServerTickEvent.Post e) {
         final MinecraftServer server = e.getServer();
-        final long nowTick = server.getTickCount();
 
-        // Initialize schedule on first tick
-        if (nextRunTick == 0L) {
-            nextRunTick = nowTick + computeDelayTicks();
+        // Failsafe: ensure main-thread
+        if (!server.isSameThread()) {
+            server.execute(() -> onServerTick(e));
             return;
         }
 
-        // Not yet time to run
+        // If no players are online, do nothing. This avoids touching world state during async join.
+        if (server.getPlayerCount() <= 0) return;
+
+        final long nowTick = server.getTickCount();
+        if (nextRunTick == 0L) { nextRunTick = nowTick + computeDelayTicks(); return; }
         if (nowTick < nextRunTick) return;
 
-        if (server.getTickCount() - lastJoinTick < 100) { // ~5s
-            // skip this cycle
-            nextRunTick = nowTick + computeDelayTicks();
-            return;
-        }
-
-        // Run once for all levels
-        final long nowMs = nowTick * 50L; // ms approx.
+        final long nowMs = nowTick * 50L; // approx ms
         for (ServerLevel level : server.getAllLevels()) {
+            // Skip empty dimensions; critical on hybrid/async join pipeline.
+            if (level.players().isEmpty()) continue;
             runCycle(level, nowMs);
         }
 
-        // Schedule next run with slight jitter to avoid synchronized spikes with other mods
         nextRunTick = nowTick + computeDelayTicks();
     }
 
-    /**
-     * Computes the delay until the next run in ticks: base +/- jitter (clamped to >= 1).
-     * Jitter is fixed to +/- 2 ticks to spread load slightly without affecting responsiveness.
-     */
+    /** Computes next delay ticks: base +/- small jitter (clamped to >=1). */
     private static int computeDelayTicks() {
         int base = Math.max(1, CleanupConfig.scanIntervalTicks);
-        // keep jitter small and safe
         int jitter = Math.min(2, Math.max(0, base - 1));
         int offset = java.util.concurrent.ThreadLocalRandom.current().nextInt(-jitter, jitter + 1);
-        int delay = base + offset;
-        return Math.max(1, delay);
+        return Math.max(1, base + offset);
     }
 
     /**
@@ -79,30 +79,14 @@ public final class ItemCleanupSystem {
      *  - Delete up to min(excess, percentage-of-eligible).
      */
     public static void runCycle(ServerLevel level, long nowMs) {
-        /*List<ItemEntity> items = allItems(level);
-
-        // Only proceed if we exceed the threshold. This also prevents "aging" while under threshold.
+        // Collect only items near players in this level, not global world.
+        List<ItemEntity> items = itemsNearPlayers(level);
         int total = items.size();
+
         int threshold = CleanupConfig.entityCountThreshold;
         if (total <= threshold) {
-            return;
+            return; // No tracking/aging while under threshold
         }
-         */
-
-        if (!level.getServer().isSameThread()) {
-            level.getServer().execute(() -> runCycle(level, nowMs)); // reschedule on main thread
-            return;
-        }
-
-        //int total = level.getEntitiesOfClass(ItemEntity.class, level.getWorldBorder().getCollisionShape().bounds().inflate(1024)).size();
-        int total = allItems(level).size();
-        int threshold = CleanupConfig.entityCountThreshold;
-        if (total <= threshold) {
-            return;
-        }
-
-        // only now: build the full list (we already bail early above)
-        List<ItemEntity> items = allItems(level);
 
         // Persistent tracking state
         TrackedItemsData data = TrackedItemsData.get(level);
@@ -126,18 +110,15 @@ public final class ItemCleanupSystem {
                     return (nowMs - firstSeen) >= CleanupConfig.minItemAgeMs;
                 })
                 .filter(PolicyEngine.filterPredicate(level))
-                .sorted(Comparator.comparingLong((ItemEntity ie) -> {
-                    TrackedItem ti = data.map().get(ie.getUUID());
-                    return (ti != null ? ti.firstSeenMs() : nowMs);
-                }))
                 .collect(Collectors.toCollection(ArrayList::new));
 
         // Sort oldest first (ascending by firstSeenMs) so that the newest items remain safe
+        eligible.sort(Comparator.comparingLong((ItemEntity ie) -> {
+            TrackedItem ti = data.map().get(ie.getUUID());
+            return (ti != null ? ti.firstSeenMs() : nowMs);
+        }));
 
         // Determine deletion counts:
-        //  - "excess": how far we are over the threshold
-        //  - "quota": percentage of eligible items we are allowed to delete
-        //  - final deletion count: min(excess, quota)
         int excess = Math.max(0, total - threshold);
         int pct = Math.max(0, Math.min(100, CleanupConfig.deletePercentage));
         int quota = (int) Math.floor(eligible.size() * (pct / 100.0));
@@ -159,35 +140,46 @@ public final class ItemCleanupSystem {
         }
     }
 
-    // Collect all item entities in the level. Bounding box is expanded beyond world border to be safe.
-    private static List<ItemEntity> allItems(ServerLevel level) {
-        AABB bb = new AABB(
-                level.getWorldBorder().getMinX() - 1_000, level.getMinBuildHeight(),
-                level.getWorldBorder().getMinZ() - 1_000,
-                level.getWorldBorder().getMaxX() + 1_000, level.getMaxBuildHeight(),
-                level.getWorldBorder().getMaxZ() + 1_000
-        );
-        return level.getEntitiesOfClass(ItemEntity.class, bb);
+    /**
+     * Collect item entities near players only.
+     * Radius is derived from server view distance (in chunks), with a safe fallback.
+     */
+    private static List<ItemEntity> itemsNearPlayers(ServerLevel level) {
+        // Try to read the server's configured view distance (chunks). Fallback to 10 chunks.
+        int vdChunks;
+        try {
+            vdChunks = Math.max(2, level.getServer().getPlayerList().getViewDistance()); // usually in chunks
+        } catch (Throwable t) {
+            vdChunks = 10;
+        }
+        int blocks = vdChunks * 16 + 16; // a little extra margin
+
+        // Use a set to avoid duplicates when player AABBs overlap.
+        LinkedHashSet<ItemEntity> set = new LinkedHashSet<>();
+        for (ServerPlayer p : level.players()) {
+            AABB bb = new AABB(
+                    p.getX() - blocks, level.getMinBuildHeight(), p.getZ() - blocks,
+                    p.getX() + blocks, level.getMaxBuildHeight(), p.getZ() + blocks
+            );
+            set.addAll(level.getEntitiesOfClass(ItemEntity.class, bb));
+        }
+        return new ArrayList<>(set);
     }
 
     private static final class ModLogger {
-        // Formats a concise summary line. Arguments are positional on purpose to avoid string building in the hot path.
         static void info(ServerLevel level, Object... args) {
-            level.getServer().sendSystemMessage(
-                    net.minecraft.network.chat.Component.literal(
-                            "[smart_item_deleter_v2] " + String.format(
-                                    java.util.Locale.ROOT,
-                                    "Cleanup: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d)",
-                                    args
-                            )
-                    )
-            );
-        }
-    }
+            String line = String.format(java.util.Locale.ROOT,
+                    "Cleanup: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d)",
+                    args);
+            // Always log to server console
+            ModMain.LOGGER.info("[smart_item_deleter_v2] {}", line);
 
-    @SubscribeEvent
-    public static void onLogin(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedInEvent e) {
-        if (e.getEntity().level().isClientSide()) return;
-        lastJoinTick = Objects.requireNonNull(e.getEntity().level().getServer()).getTickCount();
+            // Only broadcast to the game if players exist (prevents net paths during async joins)
+            if (!level.players().isEmpty()) {
+                level.getServer().sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal("[smart_item_deleter_v2] " + line)
+                );
+            }
+        }
     }
 }
