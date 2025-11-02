@@ -63,6 +63,8 @@ This configuration means:
 - Items are eligible if:
     1. Their age ≥ `minItemAgeMs`
     2. They pass the current policy filter (blacklist/whitelist mode)
+- When `protectNamedItems` is enabled, items with custom names are ignored entirely — they do not count toward the threshold and
+  are never deleted.
 
 ### Deletion Logic
 - All eligible items are sorted **oldest first** (ascending by `firstSeenMs`).

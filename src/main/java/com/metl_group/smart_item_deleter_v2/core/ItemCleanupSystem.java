@@ -81,15 +81,20 @@ public final class ItemCleanupSystem {
      *  - Delete up to min(excess, percentage-of-eligible).
      */
     public static void runCycle(ServerLevel level, long nowMs) {
-        List<ItemEntity> items = allItems(level);
-        Set<UUID> liveIds = items.stream()
-                .map(ItemEntity::getUUID)
-                .collect(Collectors.toCollection(() -> new HashSet<>(items.size())));
+        TrackedItemsData data = TrackedItemsData.get(level);
+        List<ItemEntity> candidates = new ArrayList<>();
+        for (ItemEntity ie : allItems(level)) {
+            if (PolicyEngine.isProtectedByName(ie)) {
+                data.remove(ie.getUUID());
+            } else {
+                candidates.add(ie);
+            }
+        }
 
         // Only proceed if we exceed the threshold. This also prevents "aging" while under threshold.
-        int total = items.size();
+        int total = candidates.size();
         int threshold = CleanupConfig.entityCountThreshold;
-        TrackedItemsData data = TrackedItemsData.get(level);
+        //TrackedItemsData data = TrackedItemsData.get(level);
 
         if (total <= threshold) {
             data.clearIfNotEmpty();
@@ -100,7 +105,7 @@ public final class ItemCleanupSystem {
         //TrackedItemsData data = TrackedItemsData.get(level);
 
         // Update tracking (firstSeen/lastSeen) only while above threshold.
-        for (ItemEntity ie : items) {
+        for (ItemEntity ie : candidates) {
             UUID id = ie.getUUID();
             TrackedItem old = data.map().get(id);
             String key = PolicyEngine.itemKey(ie.getItem());
@@ -111,16 +116,16 @@ public final class ItemCleanupSystem {
         }
 
         // Remove entries for items that have disappeared without being deleted by us.
-        data.retainOnly(liveIds);
+        //data.retainOnly(liveIds);
 
         // Build eligible list: old enough + matches filter policy
-        var eligible = items.stream()
+        var eligible = candidates.stream()
                 .filter(ie -> {
                     TrackedItem ti = data.map().get(ie.getUUID());
                     long firstSeen = (ti != null ? ti.firstSeenMs() : nowMs);
                     return (nowMs - firstSeen) >= CleanupConfig.minItemAgeMs;
                 })
-                .filter(PolicyEngine.filterPredicate(level))
+                .filter(PolicyEngine.filterPredicate())
                 .sorted(Comparator.comparingLong((ItemEntity ie) -> {
                     TrackedItem ti = data.map().get(ie.getUUID());
                     return (ti != null ? ti.firstSeenMs() : nowMs);
