@@ -80,13 +80,48 @@ public final class TrackedItemsData extends SavedData {
 
     /** Put or update a tracked item; marks data dirty for saving. */
     public void putOrUpdate(TrackedItem ti) {
-        map.put(ti.uuid(), ti);
-        setDirty();
+        TrackedItem prev = map.put(ti.uuid(), ti);
+        if (prev == null) {
+            setDirty();
+            return;
+        }
+
+        if (!prev.dimension().equals(ti.dimension())
+                || !prev.pos().equals(ti.pos())
+                || !prev.itemKey().equals(ti.itemKey())
+                || prev.firstSeenMs() != ti.firstSeenMs()) {
+            setDirty();
+        }
     }
 
     /** Remove a tracked item; marks data dirty if present. */
     public void remove(UUID id) {
         if (map.remove(id) != null) {
+            setDirty();
+        }
+    }
+
+    /** Remove entries whose UUIDs are not contained in the provided set. */
+    public void retainOnly(java.util.Set<UUID> keep) {
+        if (map.isEmpty()) {
+            return;
+        }
+        if (keep.isEmpty()) {
+            if (!map.isEmpty()) {
+                map.clear();
+                setDirty();
+            }
+            return;
+        }
+        if (map.keySet().retainAll(keep)) {
+            setDirty();
+        }
+    }
+
+    /** Clear the map if it currently holds entries. */
+    public void clearIfNotEmpty() {
+        if (!map.isEmpty()) {
+            map.clear();
             setDirty();
         }
     }

@@ -15,7 +15,7 @@ public final class CleanupConfig {
     public static boolean protectNamedItems;
     public static int playerSafeRadius;
     public static FilterMode filterMode;
-    public static java.util.List<String> filterList;
+    public static java.util.List<String> filterList = java.util.List.of();
     public static boolean jitterEnabled;
     public static int scanJitterTicks; // e.g. 2
     private static final ModConfigSpec.BooleanValue CFG_JITTER_ENABLED;
@@ -71,6 +71,9 @@ public final class CleanupConfig {
         filterMode          = CFG_FILTER_MODE.get();
         //filterList          = java.util.List.copyOf(CFG_FILTER_LIST.get());
         filterList          = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();
+        if (filterList.isEmpty()) {
+            filterList = java.util.List.of();
+        }
     }
 
     private CleanupConfig() {}

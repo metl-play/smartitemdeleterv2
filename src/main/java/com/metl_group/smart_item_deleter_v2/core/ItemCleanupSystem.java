@@ -15,6 +15,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.phys.AABB;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @EventBusSubscriber(modid = ModMain.MOD_ID)
@@ -50,13 +51,22 @@ public final class ItemCleanupSystem {
 
     /**
      * Computes the delay until the next run in ticks: base +/- jitter (clamped to >= 1).
-     * Jitter is fixed to +/- 2 ticks to spread load slightly without affecting responsiveness.
+     * Jitter is controlled by the config so server owners can tune or disable the spread.
      */
     private static int computeDelayTicks() {
         int base = Math.max(1, CleanupConfig.scanIntervalTicks);
-        // keep jitter small and safe
-        int jitter = Math.min(2, Math.max(0, base - 1));
-        int offset = java.util.concurrent.ThreadLocalRandom.current().nextInt(-jitter, jitter + 1);
+        if (!CleanupConfig.jitterEnabled) {
+            return base;
+        }
+
+        int jitter = Math.max(0, CleanupConfig.scanJitterTicks);
+        if (jitter <= 0) {
+            return base;
+        }
+
+        // Prevent jitter from pushing delay below 1 tick.
+        jitter = Math.min(jitter, Math.max(0, base - 1));
+        int offset = ThreadLocalRandom.current().nextInt(-jitter, jitter + 1);
         int delay = base + offset;
         return Math.max(1, delay);
     }
@@ -72,16 +82,22 @@ public final class ItemCleanupSystem {
      */
     public static void runCycle(ServerLevel level, long nowMs) {
         List<ItemEntity> items = allItems(level);
+        Set<UUID> liveIds = items.stream()
+                .map(ItemEntity::getUUID)
+                .collect(Collectors.toCollection(() -> new HashSet<>(items.size())));
 
         // Only proceed if we exceed the threshold. This also prevents "aging" while under threshold.
         int total = items.size();
         int threshold = CleanupConfig.entityCountThreshold;
+        TrackedItemsData data = TrackedItemsData.get(level);
+
         if (total <= threshold) {
+            data.clearIfNotEmpty();
             return;
         }
 
         // Persistent tracking state
-        TrackedItemsData data = TrackedItemsData.get(level);
+        //TrackedItemsData data = TrackedItemsData.get(level);
 
         // Update tracking (firstSeen/lastSeen) only while above threshold.
         for (ItemEntity ie : items) {
@@ -93,6 +109,9 @@ public final class ItemCleanupSystem {
                     : new TrackedItem(id, old.dimension(), ie.position(), key, old.firstSeenMs(), nowMs);
             data.putOrUpdate(nu);
         }
+
+        // Remove entries for items that have disappeared without being deleted by us.
+        data.retainOnly(liveIds);
 
         // Build eligible list: old enough + matches filter policy
         var eligible = items.stream()
