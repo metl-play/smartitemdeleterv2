@@ -116,10 +116,6 @@ public final class ItemCleanupSystem {
         return analyze(level, nowMs, false, false);
     }
 
-    public static Analysis analyze(ServerLevel level, long nowMs, boolean force) {
-        return analyze(level, nowMs, false, force);
-    }
-
     private static Analysis analyze(ServerLevel level, long nowMs, boolean mutate, boolean force) {
         TrackedItemsData data = TrackedItemsData.get(level);
         Map<UUID, TrackedItem> working = new HashMap<>(data.map());
@@ -255,10 +251,6 @@ public final class ItemCleanupSystem {
     ) {
         public int trackedCount() {
             return trackingSnapshot.size();
-        }
-
-        public boolean thresholdExceeded() {
-            return totalItems > configuredThreshold;
         }
 
         public long firstSeenMs(ItemEntity ie) {

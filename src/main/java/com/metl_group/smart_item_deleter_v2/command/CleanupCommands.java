@@ -7,6 +7,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,7 +21,7 @@ public final class CleanupCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> d) {
         d.register(Commands.literal("cleanup")
-                .requires(src -> src.hasPermission(2))
+                .requires(CleanupCommands::isOpPlayer)
                 .then(Commands.literal("now")
                         .executes(ctx -> executeNow(ctx, false))
                         .then(Commands.literal("force")
@@ -34,6 +35,13 @@ public final class CleanupCommands {
                         .executes(CleanupCommands::executeDryRun)
                 )
         );
+    }
+
+    private static boolean isOpPlayer(CommandSourceStack source) {
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            return false;
+        }
+        return player.hasPermissions(2);
     }
 
     private static int executeNow(CommandContext<CommandSourceStack> ctx, boolean force) {
@@ -170,10 +178,6 @@ public final class CleanupCommands {
                     entity.getY(),
                     entity.getZ(),
                     ageMs);
-        }
-
-        public long ageMs() {
-            return ageMs;
         }
     }
 }
