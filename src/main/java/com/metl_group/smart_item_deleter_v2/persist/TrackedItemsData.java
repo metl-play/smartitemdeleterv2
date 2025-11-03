@@ -89,7 +89,8 @@ public final class TrackedItemsData extends SavedData {
         if (!prev.dimension().equals(ti.dimension())
                 || !prev.pos().equals(ti.pos())
                 || !prev.itemKey().equals(ti.itemKey())
-                || prev.firstSeenMs() != ti.firstSeenMs()) {
+                || prev.firstSeenMs() != ti.firstSeenMs()
+                || prev.lastSeenMs() != ti.lastSeenMs()) {
             setDirty();
         }
     }
