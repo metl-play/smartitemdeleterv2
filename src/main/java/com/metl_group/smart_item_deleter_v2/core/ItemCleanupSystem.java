@@ -15,6 +15,7 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.phys.AABB;
 
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @EventBusSubscriber(modid = ModMain.MOD_ID)
@@ -50,13 +51,22 @@ public final class ItemCleanupSystem {
 
     /**
      * Computes the delay until the next run in ticks: base +/- jitter (clamped to >= 1).
-     * Jitter is fixed to +/- 2 ticks to spread load slightly without affecting responsiveness.
+     * Jitter is controlled by the config so server owners can tune or disable the spread.
      */
     private static int computeDelayTicks() {
         int base = Math.max(1, CleanupConfig.scanIntervalTicks);
-        // keep jitter small and safe
-        int jitter = Math.min(2, Math.max(0, base - 1));
-        int offset = java.util.concurrent.ThreadLocalRandom.current().nextInt(-jitter, jitter + 1);
+        if (!CleanupConfig.jitterEnabled) {
+            return base;
+        }
+
+        int jitter = Math.max(0, CleanupConfig.scanJitterTicks);
+        if (jitter <= 0) {
+            return base;
+        }
+
+        // Prevent jitter from pushing delay below 1 tick.
+        jitter = Math.min(jitter, Math.max(0, base - 1));
+        int offset = ThreadLocalRandom.current().nextInt(-jitter, jitter + 1);
         int delay = base + offset;
         return Math.max(1, delay);
     }
@@ -70,58 +80,16 @@ public final class ItemCleanupSystem {
      *  - Sort by age (oldest first) to protect the newest items.
      *  - Delete up to min(excess, percentage-of-eligible).
      */
-    public static void runCycle(ServerLevel level, long nowMs) {
-        List<ItemEntity> items = allItems(level);
+    public static RunSummary runCycle(ServerLevel level, long nowMs) {
+        return runCycle(level, nowMs, false);
+    }
 
-        // Only proceed if we exceed the threshold. This also prevents "aging" while under threshold.
-        int total = items.size();
-        int threshold = CleanupConfig.entityCountThreshold;
-        if (total <= threshold) {
-            return;
-        }
-
-        // Persistent tracking state
+    public static RunSummary runCycle(ServerLevel level, long nowMs, boolean force) {
+        Analysis analysis = analyze(level, nowMs, true, force);
         TrackedItemsData data = TrackedItemsData.get(level);
 
-        // Update tracking (firstSeen/lastSeen) only while above threshold.
-        for (ItemEntity ie : items) {
-            UUID id = ie.getUUID();
-            TrackedItem old = data.map().get(id);
-            String key = PolicyEngine.itemKey(ie.getItem());
-            TrackedItem nu = (old == null)
-                    ? new TrackedItem(id, level.dimension().location(), ie.position(), key, nowMs, nowMs)
-                    : new TrackedItem(id, old.dimension(), ie.position(), key, old.firstSeenMs(), nowMs);
-            data.putOrUpdate(nu);
-        }
-
-        // Build eligible list: old enough + matches filter policy
-        var eligible = items.stream()
-                .filter(ie -> {
-                    TrackedItem ti = data.map().get(ie.getUUID());
-                    long firstSeen = (ti != null ? ti.firstSeenMs() : nowMs);
-                    return (nowMs - firstSeen) >= CleanupConfig.minItemAgeMs;
-                })
-                .filter(PolicyEngine.filterPredicate(level))
-                .sorted(Comparator.comparingLong((ItemEntity ie) -> {
-                    TrackedItem ti = data.map().get(ie.getUUID());
-                    return (ti != null ? ti.firstSeenMs() : nowMs);
-                }))
-                .collect(Collectors.toCollection(ArrayList::new));
-
-        // Sort oldest first (ascending by firstSeenMs) so that the newest items remain safe
-
-        // Determine deletion counts:
-        //  - "excess": how far we are over the threshold
-        //  - "quota": percentage of eligible items we are allowed to delete
-        //  - final deletion count: min(excess, quota)
-        int excess = Math.max(0, total - threshold);
-        int pct = Math.max(0, Math.min(100, CleanupConfig.deletePercentage));
-        int quota = (int) Math.floor(eligible.size() * (pct / 100.0));
-        int toDelete = Math.min(excess, quota);
-
         int deleted = 0;
-        for (int i = 0; i < eligible.size() && deleted < toDelete; i++) {
-            ItemEntity ie = eligible.get(i);
+        for (ItemEntity ie : analysis.deleteOrder()) {
             if (!ie.isRemoved() && ie.isAlive()) {
                 ie.discard();
                 data.remove(ie.getUUID());
@@ -129,9 +97,176 @@ public final class ItemCleanupSystem {
             }
         }
 
-        if (deleted > 0) {
+        if (deleted > 0 && CleanupConfig.consoleDebugLogging) {
             ModLogger.info(level,
-                    deleted, eligible.size(), total, threshold, CleanupConfig.minItemAgeMs, pct, excess);
+                    deleted,
+                    analysis.eligibleCount(),
+                    analysis.totalItems(),
+                    analysis.configuredThreshold(),
+                    analysis.minAgeUsedMs(),
+                    analysis.deletePercentageUsed(),
+                    analysis.excessCount(),
+                    force);
+        }
+
+        return new RunSummary(analysis, deleted);
+    }
+
+    public static Analysis analyze(ServerLevel level, long nowMs) {
+        return analyze(level, nowMs, false, false);
+    }
+
+    private static Analysis analyze(ServerLevel level, long nowMs, boolean mutate, boolean force) {
+        TrackedItemsData data = TrackedItemsData.get(level);
+        Map<UUID, TrackedItem> working = new HashMap<>(data.map());
+
+        List<ItemEntity> candidates = new ArrayList<>();
+        Set<UUID> liveIds = new HashSet<>();
+        for (ItemEntity ie : allItems(level)) {
+            if (PolicyEngine.isProtectedByName(ie)) {
+                if (mutate) {
+                    data.remove(ie.getUUID());
+                }
+                continue;
+            }
+            candidates.add(ie);
+            liveIds.add(ie.getUUID());
+        }
+
+        int configuredThreshold = CleanupConfig.entityCountThreshold;
+        int threshold = force ? 0 : configuredThreshold;
+        long configuredMinAge = CleanupConfig.minItemAgeMs;
+        long minAge = force ? 0L : configuredMinAge;
+        int configuredPct = CleanupConfig.deletePercentage;
+        int pct = force ? 100 : configuredPct;
+
+        if (!force && candidates.size() <= threshold) {
+            if (mutate) {
+                data.clearIfNotEmpty();
+            }
+            return new Analysis(
+                    level,
+                    nowMs,
+                    candidates.size(),
+                    configuredThreshold,
+                    threshold,
+                    configuredMinAge,
+                    minAge,
+                    configuredPct,
+                    pct,
+                    0,
+                    0,
+                    Math.max(0, candidates.size() - configuredThreshold),
+                    force,
+                    List.of(),
+                    List.of(),
+                    Map.copyOf(data.map())
+            );
+        }
+
+        if (mutate) {
+            data.retainOnly(liveIds);
+            working = new HashMap<>(data.map());
+        } else {
+            working.keySet().retainAll(liveIds);
+        }
+
+        Map<UUID, TrackedItem> snapshot = new HashMap<>();
+        for (ItemEntity ie : candidates) {
+            UUID id = ie.getUUID();
+            TrackedItem old = working.get(id);
+            String key = PolicyEngine.itemKey(ie.getItem());
+            TrackedItem nu = (old == null)
+                    ? new TrackedItem(id, level.dimension().location(), ie.position(), key, nowMs, nowMs)
+                    : new TrackedItem(id, old.dimension(), ie.position(), key, old.firstSeenMs(), nowMs);
+
+            snapshot.put(id, nu);
+            if (mutate) {
+                data.putOrUpdate(nu);
+            } else {
+                working.put(id, nu);
+            }
+        }
+
+        var predicate = PolicyEngine.filterPredicate();
+        List<ItemEntity> eligible = candidates.stream()
+                .filter(ie -> {
+                    TrackedItem ti = snapshot.get(ie.getUUID());
+                    long firstSeen = ti != null ? ti.firstSeenMs() : nowMs;
+                    return (nowMs - firstSeen) >= minAge;
+                })
+                .filter(predicate)
+                .sorted(Comparator.comparingLong(ie -> {
+                    TrackedItem ti = snapshot.get(ie.getUUID());
+                    return ti != null ? ti.firstSeenMs() : nowMs;
+                }))
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        int excess = Math.max(0, candidates.size() - configuredThreshold);
+        int quota = (int) Math.floor(eligible.size() * (pct / 100.0));
+        int toDelete = force ? eligible.size() : Math.min(Math.max(0, candidates.size() - threshold), quota);
+        if (force && pct < 100) {
+            toDelete = Math.min(eligible.size(), (int) Math.floor(eligible.size() * (pct / 100.0)));
+        }
+
+        List<ItemEntity> deletionOrder = new ArrayList<>(eligible.subList(0, Math.min(toDelete, eligible.size())));
+
+        return new Analysis(
+                level,
+                nowMs,
+                candidates.size(),
+                configuredThreshold,
+                threshold,
+                configuredMinAge,
+                minAge,
+                configuredPct,
+                pct,
+                eligible.size(),
+                deletionOrder.size(),
+                excess,
+                force,
+                List.copyOf(eligible),
+                List.copyOf(deletionOrder),
+                Map.copyOf(snapshot)
+        );
+    }
+
+    public record Analysis(
+            ServerLevel level,
+            long timestampMs,
+            int totalItems,
+            int configuredThreshold,
+            int thresholdUsed,
+            long configuredMinAgeMs,
+            long minAgeUsedMs,
+            int configuredDeletePercentage,
+            int deletePercentageUsed,
+            int eligibleCount,
+            int scheduledDeletes,
+            int excessCount,
+            boolean forced,
+            List<ItemEntity> eligibleItems,
+            List<ItemEntity> deleteOrder,
+            Map<UUID, TrackedItem> trackingSnapshot
+    ) {
+        public int trackedCount() {
+            return trackingSnapshot.size();
+        }
+
+        public long firstSeenMs(ItemEntity ie) {
+            TrackedItem ti = trackingSnapshot.get(ie.getUUID());
+            return ti != null ? ti.firstSeenMs() : timestampMs;
+        }
+
+        public long ageMs(ItemEntity ie) {
+            long first = firstSeenMs(ie);
+            return Math.max(0L, timestampMs - first);
+        }
+    }
+
+    public record RunSummary(Analysis analysis, int deleted) {
+        public int attemptedDeletes() {
+            return analysis.deleteOrder().size();
         }
     }
 
@@ -153,7 +288,7 @@ public final class ItemCleanupSystem {
                     net.minecraft.network.chat.Component.literal(
                             "[smart_item_deleter_v2] " + String.format(
                                     java.util.Locale.ROOT,
-                                    "Cleanup: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d)",
+                                    "Cleanup: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d, forced=%s)",
                                     args
                             )
                     )

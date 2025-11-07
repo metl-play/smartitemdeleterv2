@@ -13,20 +13,20 @@ public final class CleanupConfig {
     public static int deletePercentage;
     public static long minItemAgeMs;
     public static boolean protectNamedItems;
-    public static int playerSafeRadius;
     public static FilterMode filterMode;
-    public static java.util.List<String> filterList;
+    public static java.util.List<String> filterList = java.util.List.of();
     public static boolean jitterEnabled;
     public static int scanJitterTicks; // e.g. 2
+    public static boolean consoleDebugLogging;
     private static final ModConfigSpec.BooleanValue CFG_JITTER_ENABLED;
     private static final ModConfigSpec.IntValue CFG_SCAN_JITTER;
+    private static final ModConfigSpec.BooleanValue CFG_CONSOLE_DEBUG_LOGGING;
 
     private static final ModConfigSpec.IntValue CFG_SCAN_INTERVAL;
     private static final ModConfigSpec.IntValue CFG_THRESHOLD;
     private static final ModConfigSpec.IntValue CFG_DELETE_PERCENT;
     private static final ModConfigSpec.LongValue CFG_MIN_AGE_MS;
     private static final ModConfigSpec.BooleanValue CFG_PROTECT_NAMED;
-    private static final ModConfigSpec.IntValue CFG_PLAYER_RADIUS;
     private static final ModConfigSpec.EnumValue<FilterMode> CFG_FILTER_MODE;
     private static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> CFG_FILTER_LIST;
 
@@ -42,7 +42,11 @@ public final class CleanupConfig {
 
         B.push("safety");
         CFG_PROTECT_NAMED  = B.define("protectNamedItems", true);
-        CFG_PLAYER_RADIUS  = B.defineInRange("playerSafeRadius", 8, 0, 256);
+        B.pop();
+
+        B.push("logging");
+        CFG_CONSOLE_DEBUG_LOGGING = B.comment("When false, the mod will not print cleanup summaries to the server console.")
+                .define("consoleDebugLogging", true);
         B.pop();
 
         B.push("filter");
@@ -67,10 +71,13 @@ public final class CleanupConfig {
         deletePercentage     = CFG_DELETE_PERCENT.get();
         minItemAgeMs        = CFG_MIN_AGE_MS.get();
         protectNamedItems   = CFG_PROTECT_NAMED.get();
-        playerSafeRadius    = CFG_PLAYER_RADIUS.get();
+        consoleDebugLogging = CFG_CONSOLE_DEBUG_LOGGING.get();
         filterMode          = CFG_FILTER_MODE.get();
         //filterList          = java.util.List.copyOf(CFG_FILTER_LIST.get());
         filterList          = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();
+        if (filterList.isEmpty()) {
+            filterList = java.util.List.of();
+        }
     }
 
     private CleanupConfig() {}

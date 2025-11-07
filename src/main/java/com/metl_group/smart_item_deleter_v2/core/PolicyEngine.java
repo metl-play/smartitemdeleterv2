@@ -3,7 +3,6 @@ package com.metl_group.smart_item_deleter_v2.core;
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
@@ -20,14 +19,6 @@ public final class PolicyEngine {
         return CleanupConfig.protectNamedItems && stack.has(DataComponents.CUSTOM_NAME);
     }
 
-    /** Protect items close to players (configurable radius). */
-    public static boolean isProtectedByPlayerRadius(ServerLevel level, ItemEntity ie) {
-        int r = CleanupConfig.playerSafeRadius;
-        if (r <= 0) return false;
-        return !level.getEntitiesOfClass(net.minecraft.world.entity.player.Player.class,
-                ie.getBoundingBox().inflate(r)).isEmpty();
-    }
-
     /**
      * Build a stable item key.
      * For 1.21+ we avoid raw NBT (moved to data components). A simple, stable key is the registry ID.
@@ -39,10 +30,9 @@ public final class PolicyEngine {
     }
 
     /** Build the predicate that decides whether an ItemEntity is eligible for deletion. */
-    public static Predicate<ItemEntity> filterPredicate(ServerLevel level) {
+    public static Predicate<ItemEntity> filterPredicate() {
         return ie -> {
             if (isProtectedByName(ie)) return false;
-            if (isProtectedByPlayerRadius(level, ie)) return false;
 
             ItemStack stack = ie.getItem();
             Item item = stack.getItem();
