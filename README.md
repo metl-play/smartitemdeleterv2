@@ -28,6 +28,7 @@ config/smart_item_deleter_v2-common.toml
 | `scanIntervalTicks` | `int` | `20` | How often (in ticks) the system scans the world for items (20 ticks = 1 second). |
 | `scanJitterEnabled` | `boolean` | `true` | Adds small random offset (±`scanJitterTicks`) to interval to reduce server tick spikes when multiple mods act simultaneously. |
 | `scanJitterTicks` | `int` | `2` | Maximum jitter added/subtracted from each cleanup cycle’s timing. |
+| `consoleDebugLogging` | `boolean` | `true` | When `false`, suppresses cleanup summary messages in the server console. |
 | `deletePercentage` | `int` | `90` | Percentage of eligible items to delete each cycle (0–100). Protects the newest items even when threshold is exceeded. |
 | `whitelistMode` | `boolean` | `false` | Toggles whitelist (true) or blacklist (false) filtering behavior. |
 | `filteredItems` | `list` | `[]` | A list of item registry IDs (`minecraft:stone`, `create:cogwheel`, etc.) that define which items are protected (blacklist) or targeted (whitelist). |

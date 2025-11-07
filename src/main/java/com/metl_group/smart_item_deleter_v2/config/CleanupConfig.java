@@ -17,8 +17,10 @@ public final class CleanupConfig {
     public static java.util.List<String> filterList = java.util.List.of();
     public static boolean jitterEnabled;
     public static int scanJitterTicks; // e.g. 2
+    public static boolean consoleDebugLogging;
     private static final ModConfigSpec.BooleanValue CFG_JITTER_ENABLED;
     private static final ModConfigSpec.IntValue CFG_SCAN_JITTER;
+    private static final ModConfigSpec.BooleanValue CFG_CONSOLE_DEBUG_LOGGING;
 
     private static final ModConfigSpec.IntValue CFG_SCAN_INTERVAL;
     private static final ModConfigSpec.IntValue CFG_THRESHOLD;
@@ -40,6 +42,11 @@ public final class CleanupConfig {
 
         B.push("safety");
         CFG_PROTECT_NAMED  = B.define("protectNamedItems", true);
+        B.pop();
+
+        B.push("logging");
+        CFG_CONSOLE_DEBUG_LOGGING = B.comment("When false, the mod will not print cleanup summaries to the server console.")
+                .define("consoleDebugLogging", true);
         B.pop();
 
         B.push("filter");
@@ -64,6 +71,7 @@ public final class CleanupConfig {
         deletePercentage     = CFG_DELETE_PERCENT.get();
         minItemAgeMs        = CFG_MIN_AGE_MS.get();
         protectNamedItems   = CFG_PROTECT_NAMED.get();
+        consoleDebugLogging = CFG_CONSOLE_DEBUG_LOGGING.get();
         filterMode          = CFG_FILTER_MODE.get();
         //filterList          = java.util.List.copyOf(CFG_FILTER_LIST.get());
         filterList          = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();

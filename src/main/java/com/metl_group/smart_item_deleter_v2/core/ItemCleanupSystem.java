@@ -97,7 +97,7 @@ public final class ItemCleanupSystem {
             }
         }
 
-        if (deleted > 0) {
+        if (deleted > 0 && CleanupConfig.consoleDebugLogging) {
             ModLogger.info(level,
                     deleted,
                     analysis.eligibleCount(),
