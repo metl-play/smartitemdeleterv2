@@ -31,7 +31,7 @@ config/smart_item_deleter_v2-common.toml
 | `consoleDebugLogging` | `boolean` | `true` | When `false`, suppresses cleanup summary messages in the server console. |
 | `deletePercentage` | `int` | `90` | Percentage of eligible items to delete each cycle (0–100). Protects the newest items even when threshold is exceeded. |
 | `whitelistMode` | `boolean` | `false` | Toggles whitelist (true) or blacklist (false) filtering behavior. |
-| `filteredItems` | `list` | `[]` | A list of item registry IDs (`minecraft:stone`, `create:cogwheel`, etc.) that define which items are protected (blacklist) or targeted (whitelist). |
+| `filteredItems` | `list` | `[]` | Accepts exact item IDs (`minecraft:stone`), tag references (`#forge:ingots`), or wildcard globs with `*`/`?` (e.g., `minecraft:*`, `minecraft:oak*`) that define which items are protected (blacklist) or targeted (whitelist). |
 
 ### Example:
 ```toml
@@ -41,6 +41,11 @@ scanIntervalTicks = 20
 deletePercentage = 80
 whitelistMode = false
 filteredItems = ["minecraft:nether_star", "minecraft:diamond"]
+```
+
+#### Wildcard example
+```toml
+filteredItems = ["minecraft:oak*"]
 ```
 
 This configuration means:

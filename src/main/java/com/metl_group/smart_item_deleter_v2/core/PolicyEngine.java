@@ -46,7 +46,8 @@ public final class PolicyEngine {
                     TagKey<Item> tag = TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagId);
                     return stack.is(tag);
                 } else {
-                    return s.equals(id.toString());
+                    String key = id.toString();
+                    return matchesItemId(key, s);
                 }
             });
 
@@ -55,5 +56,62 @@ public final class PolicyEngine {
                 case WHITELIST -> listed;  // allowed to delete when listed
             };
         };
+}
+
+    private static boolean matchesItemId(String key, String pattern) {
+        if (!containsWildcards(pattern)) {
+            return key.equals(pattern);
+        }
+        return wildcardMatch(key, pattern);
+    }
+
+    private static boolean containsWildcards(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '*' || c == '?') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean wildcardMatch(String text, String pattern) {
+        int textIndex = 0;
+        int patternIndex = 0;
+        int starPatternIndex = -1;
+        int starTextIndex = -1;
+
+        while (textIndex < text.length()) {
+            if (patternIndex < pattern.length()) {
+                char pc = pattern.charAt(patternIndex);
+                char tc = text.charAt(textIndex);
+
+                if (pc == '?' || pc == tc) {
+                    patternIndex++;
+                    textIndex++;
+                    continue;
+                }
+
+                if (pc == '*') {
+                    starPatternIndex = patternIndex++;
+                    starTextIndex = textIndex;
+                    continue;
+                }
+            }
+
+            if (starPatternIndex != -1) {
+                patternIndex = starPatternIndex + 1;
+                textIndex = ++starTextIndex;
+                continue;
+            }
+
+            return false;
+        }
+
+        while (patternIndex < pattern.length() && pattern.charAt(patternIndex) == '*') {
+            patternIndex++;
+        }
+
+        return patternIndex == pattern.length();
     }
 }
