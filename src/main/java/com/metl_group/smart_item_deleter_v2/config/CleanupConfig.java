@@ -46,7 +46,7 @@ public final class CleanupConfig {
 
         B.push("logging");
         CFG_CONSOLE_DEBUG_LOGGING = B.comment("When false, the mod will not print cleanup summaries to the server console.")
-                .define("consoleDebugLogging", true);
+                .define("consoleDebugLogging", false);
         B.pop();
 
         B.push("filter");
@@ -64,17 +64,17 @@ public final class CleanupConfig {
     }
 
     public static void bake() {
-        scanIntervalTicks   = CFG_SCAN_INTERVAL.get();
-        scanJitterTicks = CFG_SCAN_JITTER.get();
-        jitterEnabled   = CFG_JITTER_ENABLED.get();
-        entityCountThreshold= CFG_THRESHOLD.get();
+        scanIntervalTicks    = CFG_SCAN_INTERVAL.get();
+        scanJitterTicks      = CFG_SCAN_JITTER.get();
+        jitterEnabled        = CFG_JITTER_ENABLED.get();
+        entityCountThreshold = CFG_THRESHOLD.get();
         deletePercentage     = CFG_DELETE_PERCENT.get();
-        minItemAgeMs        = CFG_MIN_AGE_MS.get();
-        protectNamedItems   = CFG_PROTECT_NAMED.get();
-        consoleDebugLogging = CFG_CONSOLE_DEBUG_LOGGING.get();
-        filterMode          = CFG_FILTER_MODE.get();
-        //filterList          = java.util.List.copyOf(CFG_FILTER_LIST.get());
-        filterList          = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();
+        minItemAgeMs         = CFG_MIN_AGE_MS.get();
+        protectNamedItems    = CFG_PROTECT_NAMED.get();
+        consoleDebugLogging  = CFG_CONSOLE_DEBUG_LOGGING.get();
+        filterMode           = CFG_FILTER_MODE.get();
+        //filterList         = java.util.List.copyOf(CFG_FILTER_LIST.get());
+        filterList           = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();
         if (filterList.isEmpty()) {
             filterList = java.util.List.of();
         }
