@@ -1,6 +1,12 @@
 package com.metl_group.smart_item_deleter_v2.config;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
+import net.neoforged.fml.config.ModConfig;
+
+import java.lang.reflect.Field;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 public final class CleanupConfig {
     public enum FilterMode { BLACKLIST, WHITELIST }
@@ -18,6 +24,7 @@ public final class CleanupConfig {
     public static boolean jitterEnabled;
     public static int scanJitterTicks; // e.g. 2
     public static boolean consoleDebugLogging;
+    public static ModConfig serverConfig;
     private static final ModConfigSpec.BooleanValue CFG_JITTER_ENABLED;
     private static final ModConfigSpec.IntValue CFG_SCAN_JITTER;
     private static final ModConfigSpec.BooleanValue CFG_CONSOLE_DEBUG_LOGGING;
@@ -46,7 +53,7 @@ public final class CleanupConfig {
 
         B.push("logging");
         CFG_CONSOLE_DEBUG_LOGGING = B.comment("When false, the mod will not print cleanup summaries to the server console.")
-                .define("consoleDebugLogging", true);
+                .define("consoleDebugLogging", false);
         B.pop();
 
         B.push("filter");
@@ -64,21 +71,54 @@ public final class CleanupConfig {
     }
 
     public static void bake() {
-        scanIntervalTicks   = CFG_SCAN_INTERVAL.get();
-        scanJitterTicks = CFG_SCAN_JITTER.get();
-        jitterEnabled   = CFG_JITTER_ENABLED.get();
-        entityCountThreshold= CFG_THRESHOLD.get();
+        scanIntervalTicks    = CFG_SCAN_INTERVAL.get();
+        scanJitterTicks      = CFG_SCAN_JITTER.get();
+        jitterEnabled        = CFG_JITTER_ENABLED.get();
+        entityCountThreshold = CFG_THRESHOLD.get();
         deletePercentage     = CFG_DELETE_PERCENT.get();
-        minItemAgeMs        = CFG_MIN_AGE_MS.get();
-        protectNamedItems   = CFG_PROTECT_NAMED.get();
-        consoleDebugLogging = CFG_CONSOLE_DEBUG_LOGGING.get();
-        filterMode          = CFG_FILTER_MODE.get();
-        //filterList          = java.util.List.copyOf(CFG_FILTER_LIST.get());
-        filterList          = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();
+        minItemAgeMs         = CFG_MIN_AGE_MS.get();
+        protectNamedItems    = CFG_PROTECT_NAMED.get();
+        consoleDebugLogging  = CFG_CONSOLE_DEBUG_LOGGING.get();
+        filterMode           = CFG_FILTER_MODE.get();
+        filterList           = CFG_FILTER_LIST.get().stream().map(Object::toString).toList();
         if (filterList.isEmpty()) {
             filterList = java.util.List.of();
         }
     }
 
     private CleanupConfig() {}
+
+    public static Map<String, ConfigBinding> discoverBindings() {
+        Map<String, ConfigBinding> bindings = new LinkedHashMap<>();
+
+        for (Field field : CleanupConfig.class.getDeclaredFields()) {
+            if (!ModConfigSpec.ConfigValue.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+            try {
+                field.setAccessible(true);
+                ModConfigSpec.ConfigValue<?> value = (ModConfigSpec.ConfigValue<?>) field.get(null);
+                if (value == null) {
+                    continue;
+                }
+                List<String> path = value.getPath();
+                ModConfigSpec.ValueSpec spec = value.getSpec();
+                bindings.put(String.join(".", path), new ConfigBinding(value, spec));
+            } catch (IllegalAccessException ignored) {
+                // Skip inaccessible entries
+            }
+        }
+
+        return bindings.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .collect(LinkedHashMap::new, (m, e) -> m.put(e.getKey(), e.getValue()), Map::putAll);
+    }
+
+    public static void trackConfig(ModConfig config) {
+        if (config.getSpec() == SERVER_SPEC) {
+            serverConfig = config;
+        }
+    }
+
+    public record ConfigBinding(ModConfigSpec.ConfigValue<?> value, ModConfigSpec.ValueSpec spec) {}
 }

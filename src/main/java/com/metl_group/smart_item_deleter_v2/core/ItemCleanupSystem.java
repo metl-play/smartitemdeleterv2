@@ -12,7 +12,6 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.phys.AABB;
 
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -270,15 +269,20 @@ public final class ItemCleanupSystem {
         }
     }
 
-    // Collect all item entities in the level. Bounding box is expanded beyond world border to be safe.
+    /**
+     * Collect all loaded item entities.
+     *
+     * <p>Using {@link ServerLevel#getAllEntities()} avoids accessing protected chunk internals while still
+     * respecting the server's view of loaded entities (no chunk loading or world-spanning searches).
+     */
     private static List<ItemEntity> allItems(ServerLevel level) {
-        AABB bb = new AABB(
-                level.getWorldBorder().getMinX() - 1_000, level.getMinBuildHeight(),
-                level.getWorldBorder().getMinZ() - 1_000,
-                level.getWorldBorder().getMaxX() + 1_000, level.getMaxBuildHeight(),
-                level.getWorldBorder().getMaxZ() + 1_000
-        );
-        return level.getEntitiesOfClass(ItemEntity.class, bb);
+        List<ItemEntity> items = new ArrayList<>();
+        for (var entity : level.getAllEntities()) {
+            if (entity instanceof ItemEntity ie) {
+                items.add(ie);
+            }
+        }
+        return items;
     }
 
     private static final class ModLogger {

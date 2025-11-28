@@ -1,17 +1,28 @@
 package com.metl_group.smart_item_deleter_v2.command;
 
+import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 import com.metl_group.smart_item_deleter_v2.core.ItemCleanupSystem;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.neoforged.neoforge.common.ModConfigSpec;
 
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 
 import static com.metl_group.smart_item_deleter_v2.core.ItemCleanupSystem.RunSummary;
 
@@ -32,6 +43,19 @@ public final class CleanupCommands {
                 )
                 .then(Commands.literal("dryrun")
                         .executes(CleanupCommands::executeDryRun)
+                )
+                .then(Commands.literal("config")
+                        .then(Commands.literal("list")
+                                .executes(CleanupCommands::executeConfigList)
+                        )
+                        .then(Commands.argument("key", StringArgumentType.word())
+                                .suggests(CleanupCommands::suggestConfigKeys)
+                                .executes(CleanupCommands::executeConfigGet)
+                                .then(Commands.argument("value", StringArgumentType.greedyString())
+                                        .suggests(CleanupCommands::suggestConfigValue)
+                                        .executes(CleanupCommands::executeConfigSet)
+                                )
+                        )
                 )
         );
     }
@@ -164,6 +188,138 @@ public final class CleanupCommands {
         }
 
         return 1;
+    }
+
+    private static int executeConfigList(CommandContext<CommandSourceStack> ctx) {
+        var source = ctx.getSource();
+        Map<String, CleanupConfig.ConfigBinding> bindings = new LinkedHashMap<>(CleanupConfig.discoverBindings());
+
+        if (bindings.isEmpty()) {
+            source.sendFailure(Component.literal("No dynamic config entries were discovered."));
+            return 0;
+        }
+
+        source.sendSuccess(() -> Component.literal("Cleanup config options (current values):"), false);
+        bindings.forEach((path, binding) -> source.sendSuccess(
+                () -> Component.literal(String.format(Locale.ROOT, "- %s = %s", path, renderValue(binding.value().get()))),
+                false));
+        return bindings.size();
+    }
+
+    private static int executeConfigGet(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        var source = ctx.getSource();
+        String key = StringArgumentType.getString(ctx, "key");
+        CleanupConfig.ConfigBinding binding = locateBinding(key);
+
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT, "%s = %s", key, renderValue(binding.value().get()))), false);
+        return 1;
+    }
+
+    private static int executeConfigSet(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        var source = ctx.getSource();
+        String key = StringArgumentType.getString(ctx, "key");
+        String rawValue = StringArgumentType.getString(ctx, "value");
+
+        CleanupConfig.ConfigBinding binding = locateBinding(key);
+        Object parsed = parseValue(rawValue, binding);
+
+        if (!binding.spec().test(parsed)) {
+            throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherParseException()
+                    .create(String.format(Locale.ROOT, "Value '%s' rejected by config constraints for %s", rawValue, key));
+        }
+
+        Object old = binding.value().get();
+        setBindingValue(binding, parsed);
+        binding.value().save();
+
+        CleanupConfig.bake();
+
+        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "Updated %s: %s -> %s", key, renderValue(old), renderValue(binding.value().get()))), true);
+        return 1;
+    }
+
+    private static Object parseValue(String rawValue, CleanupConfig.ConfigBinding binding) throws CommandSyntaxException {
+        Object current = binding.value().get();
+        try {
+            if (current instanceof Boolean) {
+                if (rawValue.equalsIgnoreCase("true") || rawValue.equalsIgnoreCase("false")) {
+                    return Boolean.parseBoolean(rawValue);
+                }
+                throw new IllegalArgumentException("expected boolean");
+            }
+            if (current instanceof Integer) {
+                return Integer.parseInt(rawValue);
+            }
+            if (current instanceof Long) {
+                return Long.parseLong(rawValue);
+            }
+            if (current instanceof Double) {
+                return Double.parseDouble(rawValue);
+            }
+            if (current instanceof Enum<?> e) {
+                return Enum.valueOf(e.getDeclaringClass(), rawValue.toUpperCase(Locale.ROOT));
+            }
+            if (current instanceof List<?> ignored) {
+                return Arrays.stream(rawValue.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isBlank())
+                        .toList();
+            }
+        } catch (IllegalArgumentException ex) {
+            throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherParseException()
+                    .create(String.format(Locale.ROOT, "Could not parse value '%s' for %s", rawValue, String.join(".", binding.value().getPath())));
+        }
+
+        return rawValue;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void setBindingValue(CleanupConfig.ConfigBinding binding, Object parsed) {
+        ((ModConfigSpec.ConfigValue<Object>) binding.value()).set(parsed);
+    }
+
+    private static CompletableFuture<Suggestions> suggestConfigKeys(CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
+        CleanupConfig.discoverBindings().keySet().forEach(builder::suggest);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestConfigValue(CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
+        String key = StringArgumentType.getString(ctx, "key");
+        CleanupConfig.ConfigBinding binding = CleanupConfig.discoverBindings().get(key);
+        if (binding == null) {
+            return builder.buildFuture();
+        }
+
+        Object current = binding.value().get();
+        if (current instanceof Boolean) {
+            builder.suggest("true");
+            builder.suggest("false");
+        } else if (current instanceof Enum<?> e) {
+            for (Enum<?> constant : e.getDeclaringClass().getEnumConstants()) {
+                builder.suggest(constant.name().toLowerCase(Locale.ROOT));
+            }
+        } else if (current instanceof List<?> list && !list.isEmpty()) {
+            builder.suggest(renderValue(list));
+        } else {
+            builder.suggest(current.toString());
+        }
+        return builder.buildFuture();
+    }
+
+    private static CleanupConfig.ConfigBinding locateBinding(String key) throws CommandSyntaxException {
+        CleanupConfig.ConfigBinding binding = CleanupConfig.discoverBindings().get(key);
+        if (binding == null) {
+            throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherUnknownArgument().create();
+        }
+        return binding;
+    }
+
+    private static String renderValue(Object value) {
+        if (value instanceof List<?> list) {
+            return list.stream().map(Objects::toString).reduce((a, b) -> a + "," + b).orElse("");
+        }
+        return String.valueOf(value);
     }
 
     private record ItemEntityPreview(String name, int count, double x, double y, double z, long ageMs) {

@@ -16,22 +16,20 @@ import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 public final class ModMain {
     public static final String MOD_ID = "smart_item_deleter_v2";
 
-    // WICHTIG: ModContainer im Konstruktor annehmen und dort Config registrieren
     public ModMain(ModContainer container) {
         container.registerConfig(ModConfig.Type.SERVER, CleanupConfig.SERVER_SPEC);
     }
 
-    // HINWEIS: bus-Parameter weggelassen (Auto-Erkennung)
     @EventBusSubscriber(modid = MOD_ID)
     public static final class ModBus {
         @SubscribeEvent
         public static void onCommonSetup(final FMLCommonSetupEvent e) {
-            // Hooks bei Bedarf
         }
 
         @SubscribeEvent
         public static void onConfigReload(final ModConfigEvent.Reloading e) {
             if (e.getConfig().getSpec() == CleanupConfig.SERVER_SPEC) {
+                CleanupConfig.trackConfig(e.getConfig());
                 CleanupConfig.bake();
             }
         }
@@ -39,12 +37,12 @@ public final class ModMain {
         @SubscribeEvent
         public static void onConfigLoad(final ModConfigEvent.Loading e) {
             if (e.getConfig().getSpec() == CleanupConfig.SERVER_SPEC) {
+                CleanupConfig.trackConfig(e.getConfig());
                 CleanupConfig.bake();
             }
         }
     }
 
-    // RegisterCommandsEvent liegt auf der Game/Event-Bus-Seite – Auto-Erkennung reicht
     @EventBusSubscriber(modid = MOD_ID)
     public static final class GameBus {
         @SubscribeEvent
