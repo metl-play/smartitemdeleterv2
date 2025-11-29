@@ -8,7 +8,7 @@
 **Smart Item Deleter v2** is a server-side optimization mod designed to automatically clean up dropped item entities when the item count exceeds a defined threshold.  
 It tracks items individually to ensure fair, efficient, and safe removal — deleting only excess, old, and unimportant drops without disrupting normal gameplay.
 
-> ✅ Supports NeoForge 21.1+  
+> ✅ Supports NeoForge 21.1.215, Youer 1.21.1, AsyncYouer-1.21.1  
 > ⚙️ Designed for Create-based and heavily modded survival servers  
 > 💾 Low overhead, deterministic cleanup cycles
 
@@ -99,23 +99,24 @@ This configuration means:
 | `command/` | Optional `/cleanup` admin command for manual triggering |
 
 ### Commands
-| Command | Description |
-|----------|-------------|
-| `/cleanup run` | Forces a cleanup cycle manually. |
+| Command | Description                                                                    |
+|----------|--------------------------------------------------------------------------------|
+| `/cleanup run` | Forces a cleanup cycle manually.                                               |
 | `/cleanup status` | (Planned) Displays tracked item count, eligible items, and current thresholds. |
+| `/cleanup config` | Changes values in the config on the fly.                                       |
 
 ---
 
 ## 💡 Future Plans
-- Provide in-game feedback via action bar or server console only
-- Expose metrics to `/cleanup status` or a scoreboard-compatible data point
+- Provide in-game feedback about the cleanup status
+- Expose metrics to `/cleanup status` to some kind of endpoint like a json file. 
 
 ---
 
 ## 📜 License
 MIT License — freely usable and modifiable.  
 Please credit `Metl_Play` if redistributed.  
-Would be appreciated if I am mentioned in modpacks.
+Would be appreciated if I am mentioned in modpacks, but it's not required.
 
 ---
 
