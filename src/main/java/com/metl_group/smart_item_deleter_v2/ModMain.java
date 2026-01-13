@@ -8,9 +8,11 @@ import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
 import com.metl_group.smart_item_deleter_v2.command.CleanupCommands;
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
+import com.metl_group.smart_item_deleter_v2.util.LogFiles;
 
 @Mod(ModMain.MOD_ID)
 public final class ModMain {
@@ -45,6 +47,11 @@ public final class ModMain {
 
     @EventBusSubscriber(modid = MOD_ID)
     public static final class GameBus {
+        @SubscribeEvent
+        public static void onServerStarting(final ServerStartingEvent e) {
+            LogFiles.rotateExistingLogs();
+        }
+
         @SubscribeEvent
         public static void onRegisterCommands(final RegisterCommandsEvent e) {
             CleanupCommands.register(e.getDispatcher());

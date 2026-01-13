@@ -4,6 +4,7 @@ import com.metl_group.smart_item_deleter_v2.ModMain;
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 import com.metl_group.smart_item_deleter_v2.persist.TrackedItem;
 import com.metl_group.smart_item_deleter_v2.persist.TrackedItemsData;
+import com.metl_group.smart_item_deleter_v2.util.LogFiles;
 
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -13,7 +14,22 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
 
-import java.util.*;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
@@ -21,6 +37,7 @@ import java.util.stream.Collectors;
 public final class ItemCleanupSystem {
     // Next scheduled server tick to run the cleanup; replaces fixed modulo logic.
     private static long nextRunTick = 0L;
+    private static final DateTimeFormatter CLEANUP_LOG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private ItemCleanupSystem(){}
 
@@ -40,8 +57,18 @@ public final class ItemCleanupSystem {
 
         // Run once for all levels
         final long nowMs = nowTick * 50L; // ms approx.
+        List<RunSummary> summaries = new ArrayList<>();
         for (ServerLevel level : server.getAllLevels()) {
-            runCycle(level, nowMs);
+            summaries.add(runCycle(level, nowMs));
+        }
+
+        if (CleanupConfig.consoleDebugLogging) {
+            int totalDeleted = summaries.stream().mapToInt(RunSummary::deleted).sum();
+            if (totalDeleted > 0) {
+                int totalAttempted = summaries.stream().mapToInt(RunSummary::attemptedDeletes).sum();
+                logCleanupDetails(summaries, totalDeleted, totalAttempted);
+                emitConsoleSummary(server, totalDeleted, totalAttempted, summaries.size());
+            }
         }
 
         // Schedule next run with slight jitter to avoid synchronized spikes with other mods
@@ -94,18 +121,6 @@ public final class ItemCleanupSystem {
                 data.remove(ie.getUUID());
                 deleted++;
             }
-        }
-
-        if (deleted > 0 && CleanupConfig.consoleDebugLogging) {
-            ModLogger.info(level,
-                    deleted,
-                    analysis.eligibleCount(),
-                    analysis.totalItems(),
-                    analysis.configuredThreshold(),
-                    analysis.minAgeUsedMs(),
-                    analysis.deletePercentageUsed(),
-                    analysis.excessCount(),
-                    force);
         }
 
         return new RunSummary(analysis, deleted);
@@ -285,18 +300,73 @@ public final class ItemCleanupSystem {
         return items;
     }
 
-    private static final class ModLogger {
-        // Formats a concise summary line. Arguments are positional on purpose to avoid string building in the hot path.
-        static void info(ServerLevel level, Object... args) {
-            level.getServer().sendSystemMessage(
-                    net.minecraft.network.chat.Component.literal(
-                            "[smart_item_deleter_v2] " + String.format(
-                                    java.util.Locale.ROOT,
-                                    "Cleanup: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d, forced=%s)",
-                                    args
-                            )
-                    )
+    private static void emitConsoleSummary(MinecraftServer server, int totalDeleted, int totalAttempted, int levelCount) {
+        server.sendSystemMessage(
+                net.minecraft.network.chat.Component.literal(
+                        "[smart_item_deleter_v2] " + String.format(
+                                Locale.ROOT,
+                                "Cleanup job: removed %d/%d eligible across %d dimension(s). Details in logs/sidV2/cleanup.log.",
+                                totalDeleted,
+                                totalAttempted,
+                                levelCount
+                        )
+                )
+        );
+    }
+
+    private static void logCleanupDetails(List<RunSummary> summaries, int totalDeleted, int totalAttempted) {
+        if (summaries.isEmpty()) {
+            return;
+        }
+
+        Path logPath = LogFiles.cleanupLogPath();
+        String timestamp = LocalDateTime.now().format(CLEANUP_LOG_TIMESTAMP);
+        String lineSeparator = System.lineSeparator();
+
+        StringBuilder payload = new StringBuilder();
+        payload.append('[')
+                .append(timestamp)
+                .append("] Cleanup job: removed ")
+                .append(totalDeleted)
+                .append('/')
+                .append(totalAttempted)
+                .append(" eligible across ")
+                .append(summaries.size())
+                .append(" dimension(s).")
+                .append(lineSeparator);
+
+        for (RunSummary summary : summaries) {
+            if (summary.deleted() <= 0) {
+                continue;
+            }
+            Analysis analysis = summary.analysis();
+            payload.append(String.format(
+                    Locale.ROOT,
+                    " - %s: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d, forced=%s)",
+                    analysis.level().dimension().location(),
+                    summary.deleted(),
+                    analysis.eligibleCount(),
+                    analysis.totalItems(),
+                    analysis.configuredThreshold(),
+                    analysis.minAgeUsedMs(),
+                    analysis.deletePercentageUsed(),
+                    analysis.excessCount(),
+                    analysis.forced()))
+                .append(lineSeparator);
+        }
+        payload.append(lineSeparator);
+
+        try {
+            Files.createDirectories(logPath.getParent());
+            Files.writeString(
+                    logPath,
+                    payload.toString(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
             );
+        } catch (IOException ignored) {
+            // Avoid spamming console if log write fails.
         }
     }
 }

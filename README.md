@@ -18,20 +18,21 @@ It tracks items individually to ensure fair, efficient, and safe removal — del
 
 Configuration file:
 ```
-config/smart_item_deleter_v2-common.toml
+config/smart_item_deleter_v2-server.toml
 ```
 
 | Option | Type | Default | Description |
 |--------|------|----------|-------------|
-| `entityCountThreshold` | `int` | `200` | Number of dropped item entities required before cleanup activates. |
+| `entityCountThreshold` | `int` | `400` | Number of dropped item entities required before cleanup activates. |
 | `minItemAgeMs` | `long` | `15000` | Minimum age (in milliseconds) before an item becomes eligible for deletion. Prevents immediate removal of new drops. |
 | `scanIntervalTicks` | `int` | `20` | How often (in ticks) the system scans the world for items (20 ticks = 1 second). |
 | `scanJitterEnabled` | `boolean` | `true` | Adds small random offset (±`scanJitterTicks`) to interval to reduce server tick spikes when multiple mods act simultaneously. |
 | `scanJitterTicks` | `int` | `2` | Maximum jitter added/subtracted from each cleanup cycle’s timing. |
-| `consoleDebugLogging` | `boolean` | `true` | When `false`, suppresses cleanup summary messages in the server console. |
-| `deletePercentage` | `int` | `90` | Percentage of eligible items to delete each cycle (0–100). Protects the newest items even when threshold is exceeded. |
-| `whitelistMode` | `boolean` | `false` | Toggles whitelist (true) or blacklist (false) filtering behavior. |
-| `filteredItems` | `list` | `[]` | Accepts exact item IDs (`minecraft:stone`), tag references (`#forge:ingots`), or wildcard globs with `*`/`?` (e.g., `minecraft:*`, `minecraft:oak*`) that define which items are protected (blacklist) or targeted (whitelist). |
+| `consoleDebugLogging` | `boolean` | `false` | When `true`, writes cleanup details to `logs/sidV2/cleanup.log` and prints a single summary line in the console. |
+| `deletePercentage` | `int` | `80` | Percentage of eligible items to delete each cycle (0–100). Protects the newest items even when threshold is exceeded. |
+| `protectNamedItems` | `boolean` | `true` | When enabled, items with custom names are ignored and never deleted. |
+| `filterMode` | `enum` | `BLACKLIST` | `BLACKLIST` protects listed items; `WHITELIST` targets only listed items. |
+| `filterList` | `list` | `["minecraft:nether_star", "#modid:valuable"]` | Accepts exact item IDs (`minecraft:stone`), tag references (`#forge:ingots`), or wildcard globs with `*`/`?` (e.g., `minecraft:*`, `minecraft:oak*`). |
 
 ### Example:
 ```toml
@@ -39,13 +40,14 @@ entityCountThreshold = 250
 minItemAgeMs = 15000
 scanIntervalTicks = 20
 deletePercentage = 80
-whitelistMode = false
-filteredItems = ["minecraft:nether_star", "minecraft:diamond"]
+protectNamedItems = true
+filterMode = "BLACKLIST"
+filterList = ["minecraft:nether_star", "minecraft:diamond"]
 ```
 
 #### Wildcard example
 ```toml
-filteredItems = ["minecraft:oak*"]
+filterList = ["minecraft:oak*"]
 ```
 
 This configuration means:
@@ -68,7 +70,7 @@ This configuration means:
 - Cleanup only occurs **when the total item count exceeds the configured threshold**.
 - Items are eligible if:
     1. Their age ≥ `minItemAgeMs`
-    2. They pass the current policy filter (blacklist/whitelist mode)
+    2. They pass the current policy filter (`filterMode` + `filterList`)
 - When `protectNamedItems` is enabled, items with custom names are ignored entirely — they do not count toward the threshold and
   are never deleted.
 
@@ -101,15 +103,23 @@ This configuration means:
 ### Commands
 | Command | Description                                                                    |
 |----------|--------------------------------------------------------------------------------|
-| `/cleanup run` | Forces a cleanup cycle manually.                                               |
-| `/cleanup status` | (Planned) Displays tracked item count, eligible items, and current thresholds. |
-| `/cleanup config` | Changes values in the config on the fly.                                       |
+| `/cleanup now` | Forces a cleanup cycle manually.                                               |
+| `/cleanup now force` | Forces a cleanup, ignoring threshold and age checks.                    |
+| `/cleanup stats` | Displays tracked item count, eligible items, and current thresholds.        |
+| `/cleanup config list` | Lists configurable values and current settings.                       |
+| `/cleanup config <key>` | Reads a single config value.                                         |
+| `/cleanup config <key> <value>` | Updates a config value at runtime.                        |
+
+### Logging
+- Cleanup details (when `consoleDebugLogging=true`) go to `logs/sidV2/cleanup.log`.
+- `/cleanup stats` output is saved to `logs/sidV2/stats.log` every time.
+- On server start, existing `cleanup.log` and `stats.log` are zipped in `logs/sidV2/`.
 
 ---
 
 ## 💡 Future Plans
-- Provide in-game feedback about the cleanup status
-- Expose metrics to `/cleanup status` to some kind of endpoint like a json file. 
+- Provide in-game feedback about the cleanup stats
+- Expose metrics to `/cleanup stats` to some kind of endpoint like a json file. 
 
 ---
 

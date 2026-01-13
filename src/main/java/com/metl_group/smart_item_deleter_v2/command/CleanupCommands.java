@@ -2,6 +2,7 @@ package com.metl_group.smart_item_deleter_v2.command;
 
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 import com.metl_group.smart_item_deleter_v2.core.ItemCleanupSystem;
+import com.metl_group.smart_item_deleter_v2.util.LogFiles;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -14,8 +15,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,11 +24,19 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 import static com.metl_group.smart_item_deleter_v2.core.ItemCleanupSystem.RunSummary;
 
 public final class CleanupCommands {
     private CleanupCommands(){}
+    private static final DateTimeFormatter STATS_LOG_TIMESTAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public static void register(CommandDispatcher<CommandSourceStack> d) {
         d.register(Commands.literal("cleanup")
@@ -40,9 +49,6 @@ public final class CleanupCommands {
                 )
                 .then(Commands.literal("stats")
                         .executes(CleanupCommands::executeStats)
-                )
-                .then(Commands.literal("dryrun")
-                        .executes(CleanupCommands::executeDryRun)
                 )
                 .then(Commands.literal("config")
                         .then(Commands.literal("list")
@@ -111,7 +117,10 @@ public final class CleanupCommands {
         long nowMs = server.getTickCount() * 50L;
 
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.literal(String.format(Locale.ROOT, "Cleanup stats @ %d ms:", nowMs)));
+        List<String> logLines = new ArrayList<>();
+        String header = String.format(Locale.ROOT, "Cleanup stats @ %d ms:", nowMs);
+        lines.add(Component.literal(header));
+        logLines.add(header);
 
         List<ItemCleanupSystem.Analysis> analyses = new ArrayList<>();
         for (ServerLevel level : server.getAllLevels()) {
@@ -130,63 +139,11 @@ public final class CleanupCommands {
                     analysis.eligibleCount(),
                     analysis.scheduledDeletes());
             lines.add(Component.literal(line));
+            logLines.add(line);
         }
 
         lines.forEach(line -> source.sendSuccess(() -> line, false));
-        return 1;
-    }
-
-    private static int executeDryRun(CommandContext<CommandSourceStack> ctx) {
-        var source = ctx.getSource();
-        var server = source.getServer();
-        long nowMs = server.getTickCount() * 50L;
-
-        source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT, "Cleanup dry-run @ %d ms:", nowMs)), false);
-
-        for (ServerLevel level : server.getAllLevels()) {
-            ItemCleanupSystem.Analysis analysis = ItemCleanupSystem.analyze(level, nowMs);
-
-            if (analysis.deleteOrder().isEmpty()) {
-                source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                        "- %s: nothing to delete (total=%d, threshold=%d)",
-                        level.dimension().location(),
-                        analysis.totalItems(),
-                        analysis.configuredThreshold())), false);
-                continue;
-            }
-
-            List<ItemEntityPreview> previews = analysis.deleteOrder().stream()
-                    .limit(10)
-                    .map(ie -> new ItemEntityPreview(ie, analysis.ageMs(ie)))
-                    .toList();
-
-            source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                    "- %s: would delete %d/%d eligible items (total=%d, excess=%d)",
-                    level.dimension().location(),
-                    analysis.scheduledDeletes(),
-                    analysis.eligibleCount(),
-                    analysis.totalItems(),
-                    analysis.excessCount())), false);
-
-            for (ItemEntityPreview preview : previews) {
-                source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                        "    • %dx %s @ (%.1f, %.1f, %.1f) age=%.1fs",
-                        preview.count(),
-                        preview.name(),
-                        preview.x(),
-                        preview.y(),
-                        preview.z(),
-                        preview.ageMs() / 1000.0
-                )), false);
-            }
-
-            int remaining = analysis.deleteOrder().size() - previews.size();
-            if (remaining > 0) {
-                source.sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
-                        "    … and %d more item(s)", remaining)), false);
-            }
-        }
-
+        appendStatsLog(source, logLines);
         return 1;
     }
 
@@ -322,14 +279,34 @@ public final class CleanupCommands {
         return String.valueOf(value);
     }
 
-    private record ItemEntityPreview(String name, int count, double x, double y, double z, long ageMs) {
-        ItemEntityPreview(net.minecraft.world.entity.item.ItemEntity entity, long ageMs) {
-            this(entity.getItem().getHoverName().getString(),
-                    entity.getItem().getCount(),
-                    entity.getX(),
-                    entity.getY(),
-                    entity.getZ(),
-                    ageMs);
+    private static void appendStatsLog(CommandSourceStack source, List<String> lines) {
+        if (lines.isEmpty()) {
+            return;
+        }
+
+        Path logPath = LogFiles.statsLogPath();
+        String timestamp = LocalDateTime.now().format(STATS_LOG_TIMESTAMP);
+        String lineSeparator = System.lineSeparator();
+
+        StringBuilder payload = new StringBuilder();
+        payload.append('[').append(timestamp).append("] ").append(lines.get(0)).append(lineSeparator);
+        for (int i = 1; i < lines.size(); i++) {
+            payload.append(lines.get(i)).append(lineSeparator);
+        }
+        payload.append(lineSeparator);
+
+        try {
+            Files.createDirectories(logPath.getParent());
+            Files.writeString(
+                    logPath,
+                    payload.toString(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND
+            );
+        } catch (IOException ex) {
+            source.sendFailure(Component.literal("Failed to write cleanup stats log: " + ex.getMessage()));
         }
     }
+
 }
