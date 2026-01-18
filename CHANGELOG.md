@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.5-neoforged - 2026-01-18
+Changes since 0.3.1-neoforged.
+
+### Added
+- Added `logs/sidV2/cleanup.log` and `logs/sidV2/stats.log` with automatic zip rotation on server start.
+- `/cleanup stats` output now appends to `logs/sidV2/stats.log` every run.
+- Added `oldestAttemptedAgeMs` to cleanup log entries for each dimension.
+- Added per-dimension color coding to `/cleanup stats` output (overworld green, nether red, end yellow, others purple).
+
+### Changed
+- Cleanup summaries are now aggregated across dimensions; console output is a single line when enabled.
+- Cleanup log output now always writes to `logs/sidV2/cleanup.log` when deletions occur; `consoleDebugLogging` only controls the console summary.
+- Threshold/excess calculations now ignore filtered or protected items (only deletable candidates count toward the threshold).
+
+### Removed
+- Removed `/cleanup dryrun`.
+
 ## 0.3.1-neoforged - 2025-11-29
 Changes since 0.2.3-asyncyouer (tag: Release).
 
