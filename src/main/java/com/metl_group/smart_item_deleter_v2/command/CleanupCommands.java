@@ -11,6 +11,7 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.neoforged.neoforge.common.ModConfigSpec;
@@ -138,7 +139,7 @@ public final class CleanupCommands {
                     analysis.excessCount(),
                     analysis.eligibleCount(),
                     analysis.scheduledDeletes());
-            lines.add(Component.literal(line));
+            lines.add(Component.literal(line).withStyle(colorForDimension(analysis.level().dimension().location().toString())));
             logLines.add(line);
         }
 
@@ -199,29 +200,33 @@ public final class CleanupCommands {
     private static Object parseValue(String rawValue, CleanupConfig.ConfigBinding binding) throws CommandSyntaxException {
         Object current = binding.value().get();
         try {
-            if (current instanceof Boolean) {
-                if (rawValue.equalsIgnoreCase("true") || rawValue.equalsIgnoreCase("false")) {
-                    return Boolean.parseBoolean(rawValue);
+            switch (current) {
+                case Boolean b -> {
+                    if (rawValue.equalsIgnoreCase("true") || rawValue.equalsIgnoreCase("false")) {
+                        return Boolean.parseBoolean(rawValue);
+                    }
+                    throw new IllegalArgumentException("expected boolean");
                 }
-                throw new IllegalArgumentException("expected boolean");
-            }
-            if (current instanceof Integer) {
-                return Integer.parseInt(rawValue);
-            }
-            if (current instanceof Long) {
-                return Long.parseLong(rawValue);
-            }
-            if (current instanceof Double) {
-                return Double.parseDouble(rawValue);
-            }
-            if (current instanceof Enum<?> e) {
-                return Enum.valueOf(e.getDeclaringClass(), rawValue.toUpperCase(Locale.ROOT));
-            }
-            if (current instanceof List<?> ignored) {
-                return Arrays.stream(rawValue.split(","))
-                        .map(String::trim)
-                        .filter(s -> !s.isBlank())
-                        .toList();
+                case Integer i -> {
+                    return Integer.parseInt(rawValue);
+                }
+                case Long l -> {
+                    return Long.parseLong(rawValue);
+                }
+                case Double v -> {
+                    return Double.parseDouble(rawValue);
+                }
+                case Enum<?> e -> {
+                    return Enum.valueOf(e.getDeclaringClass(), rawValue.toUpperCase(Locale.ROOT));
+                }
+                case List<?> ignored -> {
+                    return Arrays.stream(rawValue.split(","))
+                            .map(String::trim)
+                            .filter(s -> !s.isBlank())
+                            .toList();
+                }
+                default -> {
+                }
             }
         } catch (IllegalArgumentException ex) {
             throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherParseException()
@@ -249,17 +254,18 @@ public final class CleanupCommands {
         }
 
         Object current = binding.value().get();
-        if (current instanceof Boolean) {
-            builder.suggest("true");
-            builder.suggest("false");
-        } else if (current instanceof Enum<?> e) {
-            for (Enum<?> constant : e.getDeclaringClass().getEnumConstants()) {
-                builder.suggest(constant.name().toLowerCase(Locale.ROOT));
+        switch (current) {
+            case Boolean b -> {
+                builder.suggest("true");
+                builder.suggest("false");
             }
-        } else if (current instanceof List<?> list && !list.isEmpty()) {
-            builder.suggest(renderValue(list));
-        } else {
-            builder.suggest(current.toString());
+            case Enum<?> e -> {
+                for (Enum<?> constant : e.getDeclaringClass().getEnumConstants()) {
+                    builder.suggest(constant.name().toLowerCase(Locale.ROOT));
+                }
+            }
+            case List<?> list when !list.isEmpty() -> builder.suggest(renderValue(list));
+            default -> builder.suggest(current.toString());
         }
         return builder.buildFuture();
     }
@@ -289,7 +295,7 @@ public final class CleanupCommands {
         String lineSeparator = System.lineSeparator();
 
         StringBuilder payload = new StringBuilder();
-        payload.append('[').append(timestamp).append("] ").append(lines.get(0)).append(lineSeparator);
+        payload.append('[').append(timestamp).append("] ").append(lines.getFirst()).append(lineSeparator);
         for (int i = 1; i < lines.size(); i++) {
             payload.append(lines.get(i)).append(lineSeparator);
         }
@@ -307,6 +313,15 @@ public final class CleanupCommands {
         } catch (IOException ex) {
             source.sendFailure(Component.literal("Failed to write cleanup stats log: " + ex.getMessage()));
         }
+    }
+
+    private static ChatFormatting colorForDimension(String dimensionId) {
+        return switch (dimensionId) {
+            case "minecraft:overworld" -> ChatFormatting.GREEN;
+            case "minecraft:the_end" -> ChatFormatting.YELLOW;
+            case "minecraft:the_nether" -> ChatFormatting.RED;
+            default -> ChatFormatting.LIGHT_PURPLE;
+        };
     }
 
 }

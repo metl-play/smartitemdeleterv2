@@ -62,11 +62,11 @@ public final class ItemCleanupSystem {
             summaries.add(runCycle(level, nowMs));
         }
 
-        if (CleanupConfig.consoleDebugLogging) {
-            int totalDeleted = summaries.stream().mapToInt(RunSummary::deleted).sum();
-            if (totalDeleted > 0) {
-                int totalAttempted = summaries.stream().mapToInt(RunSummary::attemptedDeletes).sum();
-                logCleanupDetails(summaries, totalDeleted, totalAttempted);
+        int totalDeleted = summaries.stream().mapToInt(RunSummary::deleted).sum();
+        if (totalDeleted > 0) {
+            int totalAttempted = summaries.stream().mapToInt(RunSummary::attemptedDeletes).sum();
+            logCleanupDetails(summaries, totalDeleted, totalAttempted);
+            if (CleanupConfig.consoleDebugLogging) {
                 emitConsoleSummary(server, totalDeleted, totalAttempted, summaries.size());
             }
         }
@@ -154,7 +154,13 @@ public final class ItemCleanupSystem {
         int configuredPct = CleanupConfig.deletePercentage;
         int pct = force ? 100 : configuredPct;
 
-        if (!force && candidates.size() <= threshold) {
+        var predicate = PolicyEngine.filterPredicate();
+        List<ItemEntity> filteredCandidates = candidates.stream()
+                .filter(predicate)
+                .collect(Collectors.toCollection(ArrayList::new));
+        int filteredCount = filteredCandidates.size();
+
+        if (!force && filteredCount <= threshold) {
             if (mutate) {
                 data.clearIfNotEmpty();
             }
@@ -170,7 +176,7 @@ public final class ItemCleanupSystem {
                     pct,
                     0,
                     0,
-                    Math.max(0, candidates.size() - configuredThreshold),
+                    Math.max(0, filteredCount - configuredThreshold),
                     force,
                     List.of(),
                     List.of(),
@@ -202,23 +208,21 @@ public final class ItemCleanupSystem {
             }
         }
 
-        var predicate = PolicyEngine.filterPredicate();
-        List<ItemEntity> eligible = candidates.stream()
+        List<ItemEntity> eligible = filteredCandidates.stream()
                 .filter(ie -> {
                     TrackedItem ti = snapshot.get(ie.getUUID());
                     long firstSeen = ti != null ? ti.firstSeenMs() : nowMs;
                     return (nowMs - firstSeen) >= minAge;
                 })
-                .filter(predicate)
                 .sorted(Comparator.comparingLong(ie -> {
                     TrackedItem ti = snapshot.get(ie.getUUID());
                     return ti != null ? ti.firstSeenMs() : nowMs;
                 }))
                 .collect(Collectors.toCollection(ArrayList::new));
 
-        int excess = Math.max(0, candidates.size() - configuredThreshold);
+        int excess = Math.max(0, filteredCount - configuredThreshold);
         int quota = (int) Math.floor(eligible.size() * (pct / 100.0));
-        int toDelete = force ? eligible.size() : Math.min(Math.max(0, candidates.size() - threshold), quota);
+        int toDelete = force ? eligible.size() : Math.min(Math.max(0, filteredCount - threshold), quota);
         if (force && pct < 100) {
             toDelete = Math.min(eligible.size(), (int) Math.floor(eligible.size() * (pct / 100.0)));
         }
@@ -305,7 +309,7 @@ public final class ItemCleanupSystem {
                 net.minecraft.network.chat.Component.literal(
                         "[smart_item_deleter_v2] " + String.format(
                                 Locale.ROOT,
-                                "Cleanup job: removed %d/%d eligible across %d dimension(s). Details in logs/sidV2/cleanup.log.",
+                                "Cleanup job: removed %d/%d eligible across %d dimension(s).",
                                 totalDeleted,
                                 totalAttempted,
                                 levelCount
@@ -340,9 +344,13 @@ public final class ItemCleanupSystem {
                 continue;
             }
             Analysis analysis = summary.analysis();
+            long oldestAttemptedAgeMs = analysis.deleteOrder().stream()
+                    .mapToLong(analysis::ageMs)
+                    .max()
+                    .orElse(0L);
             payload.append(String.format(
                     Locale.ROOT,
-                    " - %s: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d, forced=%s)",
+                    " - %s: removed %d of %d eligible (total=%d, threshold=%d, minAge=%dms, pct=%d%%, excess=%d, forced=%s, oldestAttemptedAgeMs=%d)",
                     analysis.level().dimension().location(),
                     summary.deleted(),
                     analysis.eligibleCount(),
@@ -351,7 +359,8 @@ public final class ItemCleanupSystem {
                     analysis.minAgeUsedMs(),
                     analysis.deletePercentageUsed(),
                     analysis.excessCount(),
-                    analysis.forced()))
+                    analysis.forced(),
+                    oldestAttemptedAgeMs))
                 .append(lineSeparator);
         }
         payload.append(lineSeparator);

@@ -23,12 +23,12 @@ config/smart_item_deleter_v2-server.toml
 
 | Option | Type | Default | Description |
 |--------|------|----------|-------------|
-| `entityCountThreshold` | `int` | `400` | Number of dropped item entities required before cleanup activates. |
+| `entityCountThreshold` | `int` | `400` | Number of dropped items that pass the current filter/protection rules required before cleanup activates. |
 | `minItemAgeMs` | `long` | `15000` | Minimum age (in milliseconds) before an item becomes eligible for deletion. Prevents immediate removal of new drops. |
 | `scanIntervalTicks` | `int` | `20` | How often (in ticks) the system scans the world for items (20 ticks = 1 second). |
 | `scanJitterEnabled` | `boolean` | `true` | Adds small random offset (±`scanJitterTicks`) to interval to reduce server tick spikes when multiple mods act simultaneously. |
 | `scanJitterTicks` | `int` | `2` | Maximum jitter added/subtracted from each cleanup cycle’s timing. |
-| `consoleDebugLogging` | `boolean` | `false` | When `true`, writes cleanup details to `logs/sidV2/cleanup.log` and prints a single summary line in the console. |
+| `consoleDebugLogging` | `boolean` | `false` | When `true`, prints a single summary line in the console; cleanup details are always written to `logs/sidV2/cleanup.log`. |
 | `deletePercentage` | `int` | `80` | Percentage of eligible items to delete each cycle (0–100). Protects the newest items even when threshold is exceeded. |
 | `protectNamedItems` | `boolean` | `true` | When enabled, items with custom names are ignored and never deleted. |
 | `filterMode` | `enum` | `BLACKLIST` | `BLACKLIST` protects listed items; `WHITELIST` targets only listed items. |
@@ -67,7 +67,7 @@ This configuration means:
     - `dimension`
     - `firstSeenMs` (time first detected)
     - `lastSeenMs` (time last confirmed)
-- Cleanup only occurs **when the total item count exceeds the configured threshold**.
+- Cleanup only occurs **when the count of items that pass the current filter/protection rules exceeds the configured threshold**.
 - Items are eligible if:
     1. Their age ≥ `minItemAgeMs`
     2. They pass the current policy filter (`filterMode` + `filterList`)
@@ -111,7 +111,7 @@ This configuration means:
 | `/cleanup config <key> <value>` | Updates a config value at runtime.                        |
 
 ### Logging
-- Cleanup details (when `consoleDebugLogging=true`) go to `logs/sidV2/cleanup.log`.
+- Cleanup details go to `logs/sidV2/cleanup.log` (console summary only when `consoleDebugLogging=true`).
 - `/cleanup stats` output is saved to `logs/sidV2/stats.log` every time.
 - On server start, existing `cleanup.log` and `stats.log` are zipped in `logs/sidV2/`.
 
