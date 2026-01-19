@@ -1,5 +1,6 @@
 # 🧹 Smart Item Deleter v2
-*A lightweight, intelligent item cleanup system for NeoForge 1.21.1*
+*A lightweight, intelligent item cleanup system for NeoForge 1.21.1*  
+[![Smart item deleter V2](https://modrinth-embeds.creeperkatze.de/project/smart-item-deleter-v2)](https://modrinth.com/project/smart-item-deleter-v2)  
 
 ---
 
@@ -8,7 +9,7 @@
 **Smart Item Deleter v2** is a server-side optimization mod designed to automatically clean up dropped item entities when the item count exceeds a defined threshold.  
 It tracks items individually to ensure fair, efficient, and safe removal — deleting only excess, old, and unimportant drops without disrupting normal gameplay.
 
-> ✅ Supports NeoForge 21.1.215, Youer 1.21.1, AsyncYouer-1.21.1  
+> ✅ Supports NeoForge 21.1.215+, Youer 1.21.1, AsyncYouer-1.21.1  
 > ⚙️ Designed for Create-based and heavily modded survival servers  
 > 💾 Low overhead, deterministic cleanup cycles
 
