@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.9-neoforged - 2026-01-19
+Changes since 0.4.5-neoforged.
+
+### Changed
+- Filter rules are now precompiled on config bake (tags/exact/wildcards) and reused during matching.
+- Cleanup log writing moved off the tick thread via a single-threaded background writer.
+- Tracked item ages are clamped to avoid negative values after restarts; tracked data clears on server start.
+- Tracked item map accessor returns an unmodifiable view; invalid dimension IDs fall back to overworld.
+- Mod logo now uses `icon.png` (256x256 RGBA) at the JAR root.
+- Updated loader version range to `[2,)`.
+
+### Removed
+- Removed the old `Smart-Item-Deleter-v2-new.png` logo asset.
+
 ## 0.4.5-neoforged - 2026-01-18
 Changes since 0.3.1-neoforged.
 

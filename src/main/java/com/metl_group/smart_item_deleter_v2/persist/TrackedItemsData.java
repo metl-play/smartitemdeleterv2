@@ -6,9 +6,11 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -44,7 +46,10 @@ public final class TrackedItemsData extends SavedData {
             long last = c.getLong("last");
 
             // Use ResourceLocation.parse for 1.21+
-            ResourceLocation dimKey = ResourceLocation.parse(dim);
+            ResourceLocation dimKey = ResourceLocation.tryParse(dim);
+            if (dimKey == null) {
+                dimKey = Level.OVERWORLD.location();
+            }
             Vec3 pos = new Vec3(x, y, z);
 
             data.map.put(id, new TrackedItem(id, dimKey, pos, key, first, last));
@@ -75,7 +80,7 @@ public final class TrackedItemsData extends SavedData {
     // --- Mutators / Accessors ---
 
     public Map<UUID, TrackedItem> map() {
-        return map;
+        return Collections.unmodifiableMap(map);
     }
 
     /** Put or update a tracked item; marks data dirty for saving. */

@@ -3,9 +3,7 @@ package com.metl_group.smart_item_deleter_v2.core;
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.function.Predicate;
@@ -35,44 +33,44 @@ public final class PolicyEngine {
             if (isProtectedByName(ie)) return false;
 
             ItemStack stack = ie.getItem();
-            Item item = stack.getItem();
-            ResourceLocation id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item);
+            var rules = CleanupConfig.compiledFilterRules;
 
-            boolean listed = CleanupConfig.filterList.stream().anyMatch(s -> {
-                if (s.startsWith("#")) {
-                    // Tag check via ItemStack#is to avoid deprecated holder API
-                    ResourceLocation tagId = ResourceLocation.tryParse(s.substring(1));
-                    if (tagId == null) return false;
-                    TagKey<Item> tag = TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagId);
-                    return stack.is(tag);
-                } else {
-                    String key = id.toString();
-                    return matchesItemId(key, s);
+            boolean listed = false;
+            String key = null;
+            for (CleanupConfig.FilterRule rule : rules) {
+                switch (rule.kind) {
+                    case TAG -> {
+                        if (stack.is(rule.tag)) {
+                            listed = true;
+                        }
+                    }
+                    case EXACT_ID -> {
+                        if (key == null) {
+                            key = itemKey(stack);
+                        }
+                        if (key.equals(rule.pattern)) {
+                            listed = true;
+                        }
+                    }
+                    case WILDCARD_ID -> {
+                        if (key == null) {
+                            key = itemKey(stack);
+                        }
+                        if (wildcardMatch(key, rule.pattern)) {
+                            listed = true;
+                        }
+                    }
                 }
-            });
+                if (listed) {
+                    break;
+                }
+            }
 
             return switch (CleanupConfig.filterMode) {
                 case BLACKLIST -> !listed; // allowed to delete when NOT listed
                 case WHITELIST -> listed;  // allowed to delete when listed
             };
         };
-}
-
-    private static boolean matchesItemId(String key, String pattern) {
-        if (!containsWildcards(pattern)) {
-            return key.equals(pattern);
-        }
-        return wildcardMatch(key, pattern);
-    }
-
-    private static boolean containsWildcards(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (c == '*' || c == '?') {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean wildcardMatch(String text, String pattern) {

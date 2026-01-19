@@ -1,8 +1,13 @@
 package com.metl_group.smart_item_deleter_v2.config;
 
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.item.Item;
 import net.neoforged.neoforge.common.ModConfigSpec;
 import net.neoforged.fml.config.ModConfig;
 
+import java.util.ArrayList;
 import java.lang.reflect.Field;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +26,7 @@ public final class CleanupConfig {
     public static boolean protectNamedItems;
     public static FilterMode filterMode;
     public static java.util.List<String> filterList = java.util.List.of();
+    public static List<FilterRule> compiledFilterRules = List.of();
     public static boolean jitterEnabled;
     public static int scanJitterTicks; // e.g. 2
     public static boolean consoleDebugLogging;
@@ -84,6 +90,7 @@ public final class CleanupConfig {
         if (filterList.isEmpty()) {
             filterList = java.util.List.of();
         }
+        compiledFilterRules = compileFilterRules(filterList);
     }
 
     private CleanupConfig() {}
@@ -120,5 +127,63 @@ public final class CleanupConfig {
         }
     }
 
+    private static List<FilterRule> compileFilterRules(List<String> entries) {
+        if (entries.isEmpty()) {
+            return List.of();
+        }
+        List<FilterRule> compiled = new ArrayList<>(entries.size());
+        for (String entry : entries) {
+            if (entry.startsWith("#")) {
+                ResourceLocation tagId = ResourceLocation.tryParse(entry.substring(1));
+                if (tagId != null) {
+                    compiled.add(FilterRule.tag(TagKey.create(Registries.ITEM, tagId)));
+                }
+                continue;
+            }
+            if (containsWildcards(entry)) {
+                compiled.add(FilterRule.wildcard(entry));
+            } else {
+                compiled.add(FilterRule.exact(entry));
+            }
+        }
+        return List.copyOf(compiled);
+    }
+
+    private static boolean containsWildcards(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '*' || c == '?') {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public record ConfigBinding(ModConfigSpec.ConfigValue<?> value, ModConfigSpec.ValueSpec spec) {}
+
+    public static final class FilterRule {
+        public enum Kind { TAG, EXACT_ID, WILDCARD_ID }
+
+        public final Kind kind;
+        public final TagKey<Item> tag;
+        public final String pattern;
+
+        private FilterRule(Kind kind, TagKey<Item> tag, String pattern) {
+            this.kind = kind;
+            this.tag = tag;
+            this.pattern = pattern;
+        }
+
+        public static FilterRule tag(TagKey<Item> tag) {
+            return new FilterRule(Kind.TAG, tag, null);
+        }
+
+        public static FilterRule exact(String id) {
+            return new FilterRule(Kind.EXACT_ID, null, id);
+        }
+
+        public static FilterRule wildcard(String pattern) {
+            return new FilterRule(Kind.WILDCARD_ID, null, pattern);
+        }
+    }
 }

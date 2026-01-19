@@ -8,12 +8,19 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public final class LogFiles {
     private static final String LOG_DIR_NAME = "sidV2";
     private static final DateTimeFormatter ARCHIVE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+    private static final ExecutorService LOG_WRITER = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "sidv2-log-writer");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private LogFiles() {}
 
@@ -32,6 +39,22 @@ public final class LogFiles {
     public static void rotateExistingLogs() {
         rotateLog(cleanupLogPath());
         rotateLog(statsLogPath());
+    }
+
+    public static void appendAsync(Path logPath, String payload) {
+        LOG_WRITER.execute(() -> {
+            try {
+                Files.createDirectories(logPath.getParent());
+                Files.writeString(
+                        logPath,
+                        payload,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.APPEND
+                );
+            } catch (IOException ignored) {
+                // Avoid console spam if log write fails.
+            }
+        });
     }
 
     private static void rotateLog(Path logPath) {

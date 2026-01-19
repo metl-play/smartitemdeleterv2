@@ -12,6 +12,7 @@ import net.neoforged.neoforge.event.server.ServerStartingEvent;
 
 import com.metl_group.smart_item_deleter_v2.command.CleanupCommands;
 import com.metl_group.smart_item_deleter_v2.config.CleanupConfig;
+import com.metl_group.smart_item_deleter_v2.persist.TrackedItemsData;
 import com.metl_group.smart_item_deleter_v2.util.LogFiles;
 
 @Mod(ModMain.MOD_ID)
@@ -50,6 +51,9 @@ public final class ModMain {
         @SubscribeEvent
         public static void onServerStarting(final ServerStartingEvent e) {
             LogFiles.rotateExistingLogs();
+            for (var level : e.getServer().getAllLevels()) {
+                TrackedItemsData.get(level).clearIfNotEmpty();
+            }
         }
 
         @SubscribeEvent

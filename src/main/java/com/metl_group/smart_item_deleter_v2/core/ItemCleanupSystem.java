@@ -14,11 +14,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -163,7 +159,29 @@ public final class ItemCleanupSystem {
         if (!force && filteredCount <= threshold) {
             if (mutate) {
                 data.clearIfNotEmpty();
+                return new Analysis(
+                        level,
+                        nowMs,
+                        candidates.size(),
+                        configuredThreshold,
+                        threshold,
+                        configuredMinAge,
+                        minAge,
+                        configuredPct,
+                        pct,
+                        0,
+                        0,
+                        Math.max(0, filteredCount - configuredThreshold),
+                        force,
+                        List.of(),
+                        List.of(),
+                        Map.copyOf(data.map())
+                );
             }
+
+            Map<UUID, TrackedItem> snapshot = new HashMap<>(data.map());
+            snapshot.keySet().retainAll(liveIds);
+
             return new Analysis(
                     level,
                     nowMs,
@@ -180,7 +198,7 @@ public final class ItemCleanupSystem {
                     force,
                     List.of(),
                     List.of(),
-                    Map.copyOf(data.map())
+                    Map.copyOf(snapshot)
             );
         }
 
@@ -211,12 +229,12 @@ public final class ItemCleanupSystem {
         List<ItemEntity> eligible = filteredCandidates.stream()
                 .filter(ie -> {
                     TrackedItem ti = snapshot.get(ie.getUUID());
-                    long firstSeen = ti != null ? ti.firstSeenMs() : nowMs;
+                    long firstSeen = ti != null ? Math.min(ti.firstSeenMs(), nowMs) : nowMs;
                     return (nowMs - firstSeen) >= minAge;
                 })
                 .sorted(Comparator.comparingLong(ie -> {
                     TrackedItem ti = snapshot.get(ie.getUUID());
-                    return ti != null ? ti.firstSeenMs() : nowMs;
+                    return ti != null ? Math.min(ti.firstSeenMs(), nowMs) : nowMs;
                 }))
                 .collect(Collectors.toCollection(ArrayList::new));
 
@@ -365,17 +383,6 @@ public final class ItemCleanupSystem {
         }
         payload.append(lineSeparator);
 
-        try {
-            Files.createDirectories(logPath.getParent());
-            Files.writeString(
-                    logPath,
-                    payload.toString(),
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
-        } catch (IOException ignored) {
-            // Avoid spamming console if log write fails.
-        }
+        LogFiles.appendAsync(logPath, payload.toString());
     }
 }
