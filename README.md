@@ -1,6 +1,6 @@
 # 🧹 Smart Item Deleter v2
 *A lightweight, intelligent item cleanup system for NeoForge 1.21.1*  
-[![Smart item deleter V2](https://modfolio.creeperkatze.de/modrinth/project/smart-item-deleter-v2?maxVersions=3)](https://modrinth.com/mod/smart-item-deleter-v2) [![Smart item deleter V2](https://modfolio.creeperkatze.de/curseforge/project/1423151?maxVersions=3)](https://www.curseforge.com/minecraft/mc-mods/smart-item-deleter-v2)  
+[![Smart item deleter V2](https://modfolio.creeperkatze.de/modrinth/project/smart-item-deleter-v2?maxVersions=3)](https://modrinth.com/mod/smart-item-deleter-v2)[![Smart item deleter V2](https://modfolio.creeperkatze.de/curseforge/project/1423151?maxVersions=3)](https://www.curseforge.com/minecraft/mc-mods/smart-item-deleter-v2)  
 
 ---
 
